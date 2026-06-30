@@ -317,3 +317,56 @@ Rounds now advance seamlessly: host timer fires silently, calls `advanceRound()`
 - Sound
 
 ---
+
+## Session 6 -- 2026-06-30
+
+### What was done
+
+**Core snap mechanic fixed, storm behavior fixed, design sync CSS/fonts applied.** Commit: `5ddb2ba`
+
+**Files changed:**
+
+| File | Change |
+|------|--------|
+| `js/physics.js` | Snap: both stones now removed (not just loser); placer named `placerStoneId`, victim named `victimStoneId`; `_onSnap` passes `{ placerStoneId, victimStoneId, placerPlayerId }` |
+| `js/firebase.js` | `recordSnap`: placer gets `increment(2)` penalty (both stones return to placer's inventory); `getSnapScores` updated to `placerPlayerId` field |
+| `js/game.js` | `handleLocalSnap`: uses new data structure, shows "SNAPPED — +2 RETURNED" toast; `onSnapReceived`: removes both stones, uses `snapped_` prefix in snapLog; `onStoneReceived`: checks `snapped_` prefix; `startNewRound`: NO longer clears stones — board persists across rounds; `draw()`: full-bleed cream board, no dark surround, dark bands removed; `drawStone()`: stones outside storm boundary drawn at 30% opacity; win detection in `onRoomUpdate`: host triggers `finishGame` when any player reaches 0 total stones; `_finishGame`: now uses fewest-stones criterion instead of most-snaps; `_finishTriggered` state variable prevents double-finish |
+| `screens/game.html` | theme-color + backgrounds changed to cream `#F5F0E5`; Space Mono font added; Google Fonts link added |
+| `screens/lobby.html` | Centered title section with SVG logo + POLARITY 34px/4px-spacing + tagline + border-bottom per DC design; Space Mono font added |
+| `screens/shop.html` | Space Mono Google Fonts added; theme-color updated |
+| `screens/win.html` | Space Mono Google Fonts added; theme-color updated |
+| `index.html` | Space Mono Google Fonts added; theme-color updated |
+| `css/style.css` | Complete rewrite per Polarity.dc.html: `--paper: #F5F0E5`, `--ink: #1C1208`, `--muted: #6B5D4A`, `--border: #9E8C6E`, `--waiting-bg: #EDE6D4`; Space Mono font; all border-radius removed (flat corners); hard box-shadows on buttons (5px 5px 0) and player cards (4px 4px 0); code tiles now white with hard shadow; HOST badge solid black; READY badge green text only; `@keyframes polarityPulse` and `@keyframes dotBlink` added |
+
+### Snap mechanic rule (corrected)
+
+**Goal: deplete your inventory to 0. First to 0 wins.**
+
+| Event | Effect |
+|-------|--------|
+| Player places a stone | Player count -1 |
+| Snap triggered (placed stone hits existing + stone) | BOTH stones removed from board. PLACER gets +2 (penalty). Victim count stays at -1 from their placement. |
+
+Snapping is a penalty for the placer. Net effect: placer count +1. Victim keeps their lower count. Strategic play: spread stones to avoid snapping opponents' stones, while tempting opponents to snap near yours.
+
+### Storm behavior (FIX 2)
+
+- Board is always fully visible (cream background, full-bleed)
+- Storm boundary = just a dashed red rectangle that moves inward each round
+- Stones outside boundary = 30% opacity, still visible, still physically active
+- No board wipe, no canvas clear on round transition
+- Stones from all rounds accumulate on the board
+
+### Silent timer (FIX 3 -- confirmed from Session 5)
+
+- No visible timer anywhere in the UI
+- Timer runs on host browser only (60s default)
+- On expire: `advanceRound()` fires atomically, all clients detect `round` change and add new stone subscription. Board is NOT cleared.
+
+### What's NOT built yet
+
+- DesignSync: index.html landing logo update (full pulsing SVG), win.html / shop.html structural layout updates
+- Power-up purchase / activation
+- Sound
+
+---
