@@ -45,7 +45,7 @@ export async function createRoom(code, hostPlayer) {
     status:        'lobby',
     round:         0,
     stormRadius:   1.0,
-    timerDuration: 10,
+    timerDuration: 60,
     createdAt:     serverTimestamp(),
     players: {
       [hostPlayer.id]: {
@@ -181,6 +181,15 @@ export async function startRound(code, round) {
   await update(ref(db, `rooms/${code}`), {
     status: 'playing',
     round,
+  });
+}
+
+// Seamlessly advance to the next round with updated storm radius (no round_end pause)
+export async function advanceRound(code, round, newStormRadius) {
+  await update(ref(db, `rooms/${code}`), {
+    status:      'playing',
+    round,
+    stormRadius: newStormRadius,
   });
 }
 

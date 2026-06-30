@@ -118,50 +118,6 @@
       touch-action: none;
     }
 
-    /* ── Round overlay ── */
-    #round-overlay {
-      position: absolute;
-      inset: 0;
-      background: rgba(245, 240, 232, 0.95);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 14px;
-      z-index: 10;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.3s;
-    }
-
-    #round-overlay.visible {
-      opacity: 1;
-      pointer-events: all;
-    }
-
-    .overlay-title {
-      font-size: 13px;
-      font-weight: bold;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-    }
-
-    #round-results {
-      font-size: 11px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--border);
-      text-align: center;
-      line-height: 2;
-    }
-
-    #overlay-sub {
-      font-size: 10px;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--border);
-    }
-
     /* ── Bottom HUD ── */
     #hud-bottom {
       flex-shrink: 0;
@@ -221,16 +177,6 @@
       gap: 6px;
     }
 
-    #hud-timer {
-      font-size: 28px;
-      font-weight: bold;
-      letter-spacing: 0.04em;
-      line-height: 1;
-      transition: color 0.2s;
-    }
-
-    #hud-timer.urgent { color: #E63946; }
-
     #snap-count {
       font-size: 10px;
       letter-spacing: 0.12em;
@@ -258,17 +204,6 @@
     <!-- Board canvas -->
     <div id="canvas-wrap">
       <canvas id="board-canvas"></canvas>
-
-      <!-- Round end overlay -->
-      <div id="round-overlay">
-        <div class="overlay-title">[ ROUND COMPLETE ]</div>
-        <div id="round-results"></div>
-        <button id="overlay-btn" class="btn btn-primary btn-sm"
-          style="width:auto;padding:11px 28px;display:none">
-          [ NEXT ROUND ]
-        </button>
-        <div id="overlay-sub">WAITING FOR HOST...</div>
-      </div>
     </div>
 
     <!-- Bottom HUD: stone selector + timer/snap -->
@@ -284,7 +219,6 @@
         </button>
       </div>
       <div id="game-meta">
-        <div id="hud-timer">—</div>
         <div id="snap-count">SNAP 0</div>
       </div>
     </div>

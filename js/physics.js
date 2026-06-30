@@ -3,10 +3,10 @@
 // Board boundary is a SQUARE (not circular).
 
 const STONE_RADIUS = 12;
-const FORCE_K      = 0.000013;
-const MIN_DIST     = 9;
+const FORCE_K      = 0.015;    // attraction force constant (inverse-square)
+const MIN_DIST     = 14;       // clamp to prevent runaway forces at contact
 const STORM_PUSH_K = 0.00007;
-const SNAP_RADIUS  = 28;
+const SNAP_RADIUS  = 48;       // px — cross-player + stone snap threshold
 
 let _engine, _runner;
 let _stones = new Map();  // id → { body, polarity, playerId, placedAt }
@@ -44,7 +44,7 @@ export function addStone({ id, x, y, polarity, playerId, placedAt }) {
   if (!_engine || _stones.has(id)) return;
   const { Bodies, World } = window.Matter;
   const body = Bodies.circle(x, y, STONE_RADIUS, {
-    frictionAir: 0.09,
+    frictionAir: 0.015,
     restitution: 0.15,
     friction:    0,
     label:       id,
@@ -159,6 +159,7 @@ function _checkSnaps() {
           ? [idA, a, idB]
           : [idB, b, idA];
 
+      console.log(`[SNAP] ${winner.playerId} absorbed ${b.playerId === winner.playerId ? a.playerId : b.playerId} | winner=${winnerId} loser=${loserId}`);
       _snapPending.add(loserId);
       setTimeout(() => {
         removeStone(loserId);

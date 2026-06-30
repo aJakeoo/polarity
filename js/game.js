@@ -3,7 +3,7 @@ import {
   subscribeToRoom,
   placeStone, subscribeToStones,
   recordSnap, subscribeToSnaps,
-  endRound, startRound, finishGame, getSnapScores,
+  advanceRound, finishGame, getSnapScores,
 } from './firebase.js';
 import {
   initPhysics, destroyPhysics,
@@ -19,20 +19,15 @@ const myId     = getOrCreatePlayerId();
 if (!roomCode) window.location.href = '../index.html';
 
 // ── DOM ───────────────────────────────────────────────────────────────────────
-const canvas       = document.getElementById('board-canvas');
-const ctx          = canvas.getContext('2d');
-const hudRound     = document.getElementById('hud-round');
-const hudTimer     = document.getElementById('hud-timer');
-const snapCount    = document.getElementById('snap-count');
-const playerStrip  = document.getElementById('player-strip');
-const countPlus    = document.getElementById('count-plus');
-const countMinus   = document.getElementById('count-minus');
-const btnPlus      = document.getElementById('btn-plus');
-const btnMinus     = document.getElementById('btn-minus');
-const roundOverlay = document.getElementById('round-overlay');
-const roundResults = document.getElementById('round-results');
-const overlayBtn   = document.getElementById('overlay-btn');
-const overlaySub   = document.getElementById('overlay-sub');
+const canvas      = document.getElementById('board-canvas');
+const ctx         = canvas.getContext('2d');
+const hudRound    = document.getElementById('hud-round');
+const snapCount   = document.getElementById('snap-count');
+const playerStrip = document.getElementById('player-strip');
+const countPlus   = document.getElementById('count-plus');
+const countMinus  = document.getElementById('count-minus');
+const btnPlus     = document.getElementById('btn-plus');
+const btnMinus    = document.getElementById('btn-minus');
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let room          = null;
@@ -76,7 +71,6 @@ function init() {
   canvas.addEventListener('pointerdown', onBoardTap);
   btnPlus.addEventListener('click',  () => selectPol('+'));
   btnMinus.addEventListener('click', () => selectPol('-'));
-  overlayBtn.addEventListener('click', onNextRound);
 
   unsubRoom = subscribeToRoom(roomCode, onRoomUpdate);
 }
@@ -117,8 +111,6 @@ function onRoomUpdate(r) {
   if (r.status === 'playing' && r.round !== lastRound) {
     lastRound = r.round;
     startNewRound(r.round, r.timerDuration ?? 60);
-  } else if (r.status === 'round_end') {
-    onRoundEnd();
   }
 }
 
@@ -127,7 +119,6 @@ function startNewRound(round, duration) {
   roundActive = true;
   mySnapCount = 0;
   clearInterval(timerInterval);
-  roundOverlay.classList.remove('visible');
   snapCount.textContent = 'SNAP 0';
 
   clearAllStones();
@@ -139,35 +130,35 @@ function startNewRound(round, duration) {
   unsubStones = subscribeToStones(roomCode, round, onStoneReceived);
   unsubSnaps  = subscribeToSnaps(roomCode, round, onSnapReceived);
 
-  startTimer(duration);
-  if (room?.host === myId) scheduleBotMoves(round, duration);
+  if (room?.host === myId) {
+    startHostTimer(duration);
+    scheduleBotMoves(round, duration);
+  }
 }
 
-function startTimer(seconds) {
+// Host-only silent timer — advances storm when round expires
+function startHostTimer(seconds) {
   const endAt = Date.now() + seconds * 1000;
   timerInterval = setInterval(() => {
-    const rem = Math.ceil((endAt - Date.now()) / 1000);
-    hudTimer.textContent = rem > 0 ? rem : '0';
-    hudTimer.classList.toggle('urgent', rem <= 5);
-    if (rem <= 0) {
+    if (Date.now() >= endAt) {
       clearInterval(timerInterval);
       roundActive = false;
-      hudTimer.textContent = '0';
-      if (room?.host === myId) doEndRound();
+      doEndRound();
     }
-  }, 200);
+  }, 500);
 }
 
 async function doEndRound() {
   const newStorm = parseFloat(Math.max(0.3, stormR - 0.12).toFixed(2));
-  if (newStorm <= 0.3 && stormR <= 0.3) {
+  if (stormR <= 0.3) {
     try { await _finishGame(); } catch (_) {}
     return;
   }
+  const nextRound = (room?.round ?? 1) + 1;
   try {
-    await endRound(roomCode, newStorm);
+    await advanceRound(roomCode, nextRound, newStorm);
   } catch (e) {
-    setTimeout(() => endRound(roomCode, newStorm).catch(() => {}), 1000);
+    setTimeout(() => advanceRound(roomCode, nextRound, newStorm).catch(() => {}), 1000);
   }
 }
 
@@ -186,33 +177,6 @@ async function _finishGame() {
     }
   }
   await finishGame(roomCode, winnerId);
-}
-
-function onRoundEnd() {
-  clearInterval(timerInterval);
-  roundActive = false;
-  hudTimer.textContent = '—';
-  hudTimer.classList.remove('urgent');
-
-  const myAbsorbed = [...snapLog.values()].filter(s => s.winnerPlayerId === myId).length;
-  roundResults.innerHTML =
-    `YOU ABSORBED: <strong>${myAbsorbed}</strong> STONE${myAbsorbed !== 1 ? 'S' : ''}<br>` +
-    `STORM: ${Math.round(stormR * 100)}% &rarr; ${Math.round(Math.max(0.3, stormR - 0.12) * 100)}%`;
-
-  const isHost = room?.host === myId;
-  overlayBtn.style.display = isHost ? 'block' : 'none';
-  overlaySub.style.display = isHost ? 'none'  : 'block';
-  roundOverlay.classList.add('visible');
-}
-
-async function onNextRound() {
-  if (room?.host !== myId) return;
-  overlayBtn.disabled = true;
-  try {
-    await startRound(roomCode, (room.round ?? 1) + 1);
-  } finally {
-    overlayBtn.disabled = false;
-  }
 }
 
 // ── Bot simulation (host only) ────────────────────────────────────────────────
