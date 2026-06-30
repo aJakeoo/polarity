@@ -213,3 +213,72 @@ Build **win / results screen** (`screens/win.html` + `js/win.js`):
 5. All players see [HOME] button
 
 ---
+
+## Session 4 -- 2026-06-30
+
+### What was done
+
+**Full layout rebuild from PDF spec.** All 4 screens rebuilt to match `Polarity UI Sheet.pdf`. Commit: `20447a6`
+
+**Files changed:**
+
+| File | Change |
+|------|--------|
+| `js/physics.js` | Square boundary instead of circular; `boardHalf` replaces `boardR`; storm push per-axis |
+| `js/game.js` | Square board drawing; player strip moved to top HUD; snap counter added; square tap detection; `boardHalf` throughout |
+| `js/win.js` | New -- full results controller: winner card, leaderboard, stats, rematch/home buttons |
+| `js/shop.js` | New -- shop controller: renders power-up cards, flux balance from Firebase |
+| `screens/game.html` | Top HUD restructured: brand + round + player strip; bottom HUD: stone buttons left, timer/snap right |
+| `screens/win.html` | Full results screen: winner card, leaderboard, stats section, play again + back to lobby buttons |
+| `screens/shop.html` | Full shop screen: balance display, power-up card list, back button |
+| `screens/lobby.html` | Text case fixes to match all-caps design system |
+| `css/style.css` | Added gap-6 utility |
+
+### What was structurally wrong (before)
+
+| Screen | Issue |
+|--------|-------|
+| Game board | Board was a CIRCLE -- PDF specifies a SQUARE with dashed border |
+| Game board | Storm zone was a concentric circle -- must be an inner dashed SQUARE |
+| Game board | Player strip was in the bottom HUD -- PDF puts it in the top bar |
+| Game board | Bottom HUD had two wide stone buttons side by side -- PDF has compact square buttons left, timer+snap right |
+| Physics | Storm boundary used circular distance check and radial push -- now per-axis square push |
+| Stone placement | Used circular distance check for tap detection -- now square |
+| Win screen | Was a stub placeholder |
+| Shop screen | Was a stub placeholder |
+
+### What was rebuilt
+
+**Game board (square):**
+- `boardHalf` = half the side of the square board (canvas width / 2 * 0.96)
+- Board drawn as a filled rectangle + dashed outer border
+- Storm zone drawn as an inner dashed red rectangle
+- Dot grid fills the full board area (not clipped to storm)
+- Physics storm boundary: per-axis push (if |ox| > stormEdge or |oy| > stormEdge)
+- Tap detection: `|dx| < stormHalf && |dy| < stormHalf`
+
+**Results screen (complete):**
+- Loads snap scores across all rounds via `getSnapScores`
+- Winner card: large avatar (64px), name, WINNER badge, snap count
+- Leaderboard: ranked rows with avatar, name, snaps, stone counts
+- Stats: total snaps, your snaps, rounds played, highest chain
+- Host: [PLAY AGAIN] button triggers `resetToLobby` -- all clients follow to lobby
+- All: [BACK TO LOBBY] button
+
+**Shop screen (functional shell):**
+- Reads player flux balance from Firebase in real time
+- Renders all 4 power-up cards (FLIP, SURGE, GHOST, ANCHOR) with icon, description, cost
+- Buy button disabled when insufficient flux or already owned (purchase flow stubbed)
+
+### What's NOT built yet
+
+- Power-up purchase / activation logic (buy button shows toast "COMING SOON")
+- Bot power-up usage (stubbed)
+- Sound
+
+### Next task
+
+- Implement power-up purchase flow in `js/shop.js` and `js/firebase.js`
+- Bot AI power-up activation
+
+---
