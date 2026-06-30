@@ -16,54 +16,91 @@
       height: 100dvh;
       max-width: 480px;
       margin: 0 auto;
-      background: var(--paper);
     }
 
     /* ── Top HUD ── */
     #hud-top {
-      height: 50px;
+      height: 48px;
       display: flex;
       align-items: center;
-      padding: 0 14px;
+      padding: 0 12px;
+      background: var(--paper);
       border-bottom: 1.5px solid var(--ink);
       flex-shrink: 0;
-      gap: 8px;
+      gap: 10px;
     }
 
-    .hud-logo {
+    .hud-brand {
       display: flex;
       align-items: center;
       gap: 5px;
       flex-shrink: 0;
     }
 
-    .hud-logo .stone-icon { width: 18px; height: 18px; font-size: 10px; }
+    .hud-brand .stone-icon { width: 16px; height: 16px; font-size: 9px; }
 
-    .hud-title {
-      font-size: 13px;
+    .hud-brand-name {
+      font-size: 12px;
       font-weight: bold;
       letter-spacing: 0.1em;
     }
 
-    .hud-sep { color: var(--border); font-size: 12px; }
+    .hud-sep {
+      color: var(--border);
+      font-size: 11px;
+      flex-shrink: 0;
+    }
 
     #hud-round {
-      font-size: 10px;
+      font-size: 9px;
       letter-spacing: 0.12em;
-      text-transform: uppercase;
       color: var(--border);
+      flex-shrink: 0;
     }
 
-    #hud-timer {
-      font-size: 20px;
+    /* Player strip — top HUD right side */
+    #player-strip {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    .strip-player {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+
+    .strip-avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid var(--ink);
+      overflow: hidden;
+      background: var(--border);
+    }
+
+    .strip-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      mix-blend-mode: multiply;
+    }
+
+    .strip-avatar.is-me { border-width: 2.5px; }
+
+    .strip-counts {
+      font-size: 8px;
       font-weight: bold;
-      letter-spacing: 0.04em;
-      min-width: 32px;
-      text-align: right;
-      transition: color 0.2s;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      line-height: 1;
     }
-
-    #hud-timer.urgent { color: #E63946; }
 
     /* ── Canvas ── */
     #canvas-wrap {
@@ -71,6 +108,7 @@
       position: relative;
       overflow: hidden;
       background: #1A1A1A;
+      min-height: 0;
     }
 
     #board-canvas {
@@ -84,7 +122,7 @@
     #round-overlay {
       position: absolute;
       inset: 0;
-      background: rgba(245, 240, 232, 0.94);
+      background: rgba(245, 240, 232, 0.95);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -102,7 +140,7 @@
     }
 
     .overlay-title {
-      font-size: 15px;
+      font-size: 13px;
       font-weight: bold;
       letter-spacing: 0.14em;
       text-transform: uppercase;
@@ -110,7 +148,7 @@
 
     #round-results {
       font-size: 11px;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--border);
       text-align: center;
@@ -127,84 +165,33 @@
     /* ── Bottom HUD ── */
     #hud-bottom {
       flex-shrink: 0;
-      border-top: 1.5px solid var(--ink);
       background: var(--paper);
-    }
-
-    /* Player strip */
-    #player-strip {
+      border-top: 1.5px solid var(--ink);
       display: flex;
-      gap: 12px;
-      padding: 8px 14px 6px;
-      overflow-x: auto;
-      border-bottom: 1px solid var(--border);
-    }
-
-    #player-strip::-webkit-scrollbar { display: none; }
-
-    .strip-player {
-      display: flex;
-      flex-direction: column;
       align-items: center;
-      gap: 3px;
+      padding: 10px 14px 14px;
+      gap: 10px;
+    }
+
+    /* Stone selector — left */
+    #stone-selector {
+      display: flex;
+      gap: 8px;
       flex-shrink: 0;
     }
 
-    .strip-avatar {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      border: 2px solid var(--ink);
-      overflow: hidden;
-      background: var(--border);
-    }
-
-    .strip-avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      mix-blend-mode: multiply;
-    }
-
-    .strip-avatar.is-me { border-width: 2.5px; }
-
-    .strip-counts {
-      font-size: 9px;
-      font-weight: bold;
-      letter-spacing: 0.04em;
-      white-space: nowrap;
-    }
-
-    .strip-name {
-      font-size: 8px;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--border);
-      max-width: 42px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    /* Stone selector */
-    #stone-selector {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 14px 14px;
-    }
-
     .stone-btn {
-      flex: 1;
+      width: 56px;
+      height: 56px;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 6px;
-      padding: 12px 10px;
+      gap: 2px;
       font-family: 'Courier New', Courier, monospace;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: bold;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
       border: 1.5px solid var(--ink);
       border-radius: 3px;
@@ -213,15 +200,8 @@
       transition: box-shadow 0.1s;
     }
 
-    .stone-btn.plus {
-      background: var(--ink);
-      color: var(--paper);
-    }
-
-    .stone-btn.minus {
-      background: transparent;
-      color: var(--ink);
-    }
+    .stone-btn.plus  { background: var(--ink); color: var(--paper); }
+    .stone-btn.minus { background: transparent; color: var(--ink); }
 
     .stone-btn.active {
       box-shadow: 0 0 0 2.5px var(--paper), 0 0 0 4.5px var(--ink);
@@ -229,47 +209,50 @@
 
     .stone-btn:disabled { opacity: 0.25; cursor: not-allowed; box-shadow: none; }
 
-    .stone-btn-sym { font-size: 17px; line-height: 1; }
+    .stone-btn-sym { font-size: 20px; line-height: 1; }
+    .stone-btn-n   { font-size: 10px; opacity: 0.75; }
 
-    .stone-btn-lbl { font-size: 10px; }
-
-    .stone-btn-n { font-size: 11px; opacity: 0.75; }
-
-    /* Disconnect banner */
-    #disconnect-banner {
-      position: fixed;
-      top: 0; left: 0; right: 0;
-      background: var(--ink);
-      color: var(--paper);
-      text-align: center;
-      font-size: 10px;
-      font-weight: bold;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      padding: 6px;
-      z-index: 200;
-      display: none;
+    /* Game meta — right of stone selector */
+    #game-meta {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
     }
 
-    #disconnect-banner.visible { display: block; }
+    #hud-timer {
+      font-size: 28px;
+      font-weight: bold;
+      letter-spacing: 0.04em;
+      line-height: 1;
+      transition: color 0.2s;
+    }
+
+    #hud-timer.urgent { color: #E63946; }
+
+    #snap-count {
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--border);
+    }
   </style>
 </head>
 <body>
-  <div id="disconnect-banner">[ RECONNECTING... ]</div>
 
   <div id="game-wrap">
 
-    <!-- Top HUD -->
+    <!-- Top HUD: brand + round + player strip -->
     <div id="hud-top">
-      <div class="hud-logo">
+      <div class="hud-brand">
         <span class="stone-icon plus">+</span>
         <span class="stone-icon minus">−</span>
-        <span class="hud-title">POLARITY</span>
+        <span class="hud-brand-name">POLARITY</span>
       </div>
-      <div class="hud-sep">·</div>
-      <div id="hud-round">ROUND 1</div>
-      <div style="flex:1"></div>
-      <div id="hud-timer">—</div>
+      <span class="hud-sep">·</span>
+      <span id="hud-round">ROUND 1</span>
+      <div id="player-strip"></div>
     </div>
 
     <!-- Board canvas -->
@@ -288,20 +271,21 @@
       </div>
     </div>
 
-    <!-- Bottom HUD -->
+    <!-- Bottom HUD: stone selector + timer/snap -->
     <div id="hud-bottom">
-      <div id="player-strip"></div>
       <div id="stone-selector">
-        <button class="stone-btn minus" id="btn-minus">
-          <span class="stone-btn-sym">−</span>
-          <span class="stone-btn-lbl">MINUS</span>
-          <span class="stone-btn-n" id="count-minus">5</span>
-        </button>
         <button class="stone-btn plus active" id="btn-plus">
           <span class="stone-btn-sym">+</span>
-          <span class="stone-btn-lbl">PLUS</span>
           <span class="stone-btn-n" id="count-plus">50</span>
         </button>
+        <button class="stone-btn minus" id="btn-minus">
+          <span class="stone-btn-sym">−</span>
+          <span class="stone-btn-n" id="count-minus">5</span>
+        </button>
+      </div>
+      <div id="game-meta">
+        <div id="hud-timer">—</div>
+        <div id="snap-count">SNAP 0</div>
       </div>
     </div>
 

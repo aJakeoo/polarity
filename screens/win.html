@@ -4,33 +4,201 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <meta name="theme-color" content="#F5F0E8">
-  <title>POLARITY — Results</title>
+  <title>POLARITY — Final Results</title>
   <link rel="stylesheet" href="../css/style.css">
   <style>
-    body { background: #F5F0E8; }
-    .stub {
+    /* ── Winner card ── */
+    .winner-card {
+      background: var(--white);
+      border: 1.5px solid var(--ink);
+      border-radius: 3px;
+      padding: 20px 16px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      min-height: 100dvh;
-      gap: 16px;
-      padding: 40px;
-      text-align: center;
+      gap: 10px;
+      margin-bottom: 4px;
     }
-    .stub h2 { font-size: 18px; letter-spacing: 0.12em; }
-    .stub p  { font-size: 11px; color: var(--border); letter-spacing: 0.08em; text-transform: uppercase; }
+
+    .winner-avatar {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 2.5px solid var(--ink);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .winner-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      mix-blend-mode: multiply;
+    }
+
+    .winner-name {
+      font-size: 20px;
+      font-weight: bold;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .winner-badge {
+      background: var(--ink);
+      color: var(--paper);
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 0.14em;
+      padding: 5px 14px;
+      border-radius: 2px;
+    }
+
+    .winner-snaps {
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--border);
+    }
+
+    /* ── Leaderboard ── */
+    .leaderboard {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .lb-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--white);
+      border: 1.5px solid var(--border);
+      border-radius: 3px;
+      padding: 10px 12px;
+    }
+
+    .lb-rank {
+      font-size: 11px;
+      font-weight: bold;
+      letter-spacing: 0.06em;
+      color: var(--border);
+      width: 20px;
+      flex-shrink: 0;
+    }
+
+    .lb-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 2px solid var(--ink);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .lb-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      mix-blend-mode: multiply;
+    }
+
+    .lb-name {
+      flex: 1;
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .lb-snaps {
+      font-size: 11px;
+      font-weight: bold;
+      letter-spacing: 0.06em;
+      flex-shrink: 0;
+    }
+
+    .lb-stones {
+      font-size: 10px;
+      color: var(--border);
+      letter-spacing: 0.04em;
+      flex-shrink: 0;
+    }
+
+    /* ── Stats ── */
+    .stats-section {
+      border: 1.5px solid var(--border);
+      border-radius: 3px;
+      padding: 14px 14px;
+    }
+
+    .stats-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 5px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stats-row:last-child { border-bottom: none; }
+
+    .stats-label {
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--border);
+    }
+
+    .stats-value {
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 0.06em;
+    }
+
+    /* ── Loading state ── */
+    .win-loading {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      color: var(--border);
+    }
   </style>
 </head>
 <body>
-  <div class="stub">
-    <div class="logo-stones">
-      <span class="stone-icon plus">+</span>
-      <span class="stone-icon minus">−</span>
+  <div class="screen">
+
+    <!-- Header -->
+    <div class="lobby-top gap-20">
+      <div class="logo-small">
+        <div class="logo-stones">
+          <span class="stone-icon plus">+</span>
+          <span class="stone-icon minus">−</span>
+        </div>
+        <span class="logo-title">POLARITY</span>
+      </div>
     </div>
-    <h2>FINAL RESULTS</h2>
-    <p>Win screen coming soon</p>
-    <a href="../index.html" class="btn btn-primary btn-sm" style="text-decoration:none;display:inline-block;width:auto;padding:12px 24px">[ Play Again ]</a>
+
+    <span class="section-label" style="text-align:center;margin-bottom:2px">[ FINAL RESULTS ]</span>
+    <p id="round-label" style="font-size:10px;letter-spacing:0.1em;color:var(--border);text-align:center;margin-bottom:20px;text-transform:uppercase"></p>
+
+    <div id="win-content" class="win-loading">LOADING...</div>
+
+    <div style="flex:1"></div>
+
+    <!-- Actions -->
+    <div class="lobby-actions" style="margin-top:20px">
+      <button class="btn btn-primary" id="play-again-btn" style="display:none">[ PLAY AGAIN ]</button>
+      <button class="btn btn-outline" id="back-lobby-btn">[ BACK TO LOBBY ]</button>
+    </div>
+
   </div>
+
+  <div class="toast" id="toast"></div>
+  <script type="module" src="../js/win.js"></script>
 </body>
 </html>

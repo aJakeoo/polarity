@@ -4,34 +4,154 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <meta name="theme-color" content="#F5F0E8">
-  <title>POLARITY — Shop</title>
+  <title>POLARITY — Power-Up Shop</title>
   <link rel="stylesheet" href="../css/style.css">
   <style>
-    body { background: #F5F0E8; }
-    .stub {
+    .balance-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--white);
+      border: 1.5px solid var(--ink);
+      border-radius: 3px;
+      padding: 12px 14px;
+      margin-bottom: 6px;
+    }
+
+    .balance-amount {
+      font-size: 28px;
+      font-weight: bold;
+      letter-spacing: 0.06em;
+    }
+
+    .flux-label {
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      color: var(--border);
+      text-transform: uppercase;
+    }
+
+    .shop-hint {
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--border);
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .powerup-list {
       display: flex;
       flex-direction: column;
+      gap: 8px;
+    }
+
+    .powerup-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--white);
+      border: 1.5px solid var(--border);
+      border-radius: 3px;
+      padding: 12px 14px;
+    }
+
+    .powerup-card.owned { border-color: var(--ink); }
+
+    .powerup-icon {
+      width: 36px;
+      height: 36px;
+      border: 1.5px solid var(--ink);
+      border-radius: 3px;
+      display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 100dvh;
-      gap: 16px;
-      padding: 40px;
-      text-align: center;
+      font-size: 16px;
+      font-weight: bold;
+      flex-shrink: 0;
     }
-    .stub h2 { font-size: 18px; letter-spacing: 0.12em; }
-    .stub p  { font-size: 11px; color: var(--border); letter-spacing: 0.08em; text-transform: uppercase; }
+
+    .powerup-info { flex: 1; min-width: 0; }
+
+    .powerup-name {
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+
+    .powerup-desc {
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--border);
+      line-height: 1.4;
+    }
+
+    .powerup-buy {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 11px;
+      font-weight: bold;
+      letter-spacing: 0.08em;
+      background: var(--ink);
+      color: var(--paper);
+      border: none;
+      border-radius: 2px;
+      padding: 8px 12px;
+      cursor: pointer;
+      flex-shrink: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .powerup-buy:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .powerup-owned-badge {
+      font-size: 9px;
+      font-weight: bold;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--border);
+      flex-shrink: 0;
+    }
   </style>
 </head>
 <body>
-  <div class="stub">
-    <div class="logo-stones">
-      <span class="stone-icon plus">+</span>
-      <span class="stone-icon minus">−</span>
+  <div class="screen">
+
+    <div class="lobby-top gap-20" style="margin-bottom:16px">
+      <div class="logo-small">
+        <div class="logo-stones">
+          <span class="stone-icon plus">+</span>
+          <span class="stone-icon minus">−</span>
+        </div>
+        <span class="logo-title">POLARITY</span>
+      </div>
     </div>
-    <h2>POWER-UP SHOP</h2>
-    <p>Flux economy coming soon</p>
-    <a href="game.html" class="btn btn-outline btn-sm" style="text-decoration:none;display:inline-block;width:auto;padding:10px 20px">[ Back to Game ]</a>
+
+    <span class="section-label">[ POWER-UP SHOP ]</span>
+
+    <div class="balance-row gap-20">
+      <div>
+        <div class="balance-amount" id="flux-balance">—</div>
+        <div class="flux-label">FLUX BALANCE</div>
+      </div>
+      <span class="section-label" style="margin:0">[ FLUX ]</span>
+    </div>
+
+    <p class="shop-hint">[ EQUIP UP TO 3 POWER-UPS ]</p>
+
+    <div class="powerup-list" id="powerup-list">
+      <p class="loading-text">LOADING...</p>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <button class="btn btn-outline" id="back-btn" style="margin-top:20px">[ BACK TO GAME ]</button>
+
   </div>
-  <script type="module" src="../js/powerups.js"></script>
+
+  <div class="toast" id="toast"></div>
+  <script type="module" src="../js/shop.js"></script>
 </body>
 </html>

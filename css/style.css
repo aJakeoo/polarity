@@ -420,6 +420,7 @@ body {
 
 /* ---- Spacer ---- */
 .spacer { flex: 1; }
+.gap-6  { margin-bottom: 6px; }
 .gap-8  { margin-bottom: 8px; }
 .gap-12 { margin-bottom: 12px; }
 .gap-16 { margin-bottom: 16px; }
