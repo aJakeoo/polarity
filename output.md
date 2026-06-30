@@ -148,3 +148,68 @@ Build **win / results screen** (`screens/win.html`) and wire up game-end detecti
 - After completing every task: `git commit` + `git push` to GitHub with a descriptive message (no em dashes, no emojis), then append the session summary to this file including the commit hash.
 
 ---
+
+## Session 3 — 2026-06-30
+
+### What was done
+
+**Bot AI built** and **avatar tinting fixed**. Commit: `7986e13`
+
+**Files changed:**
+
+| File | Change |
+|------|--------|
+| `js/bot.js` | Full bot AI implementation |
+| `js/firebase.js` | Added `addBotToRoom`, `finishGame`, `resetToLobby`, `getSnapScores` |
+| `js/lobby.js` | Bot fill on start game; avatar tinting fix |
+| `js/game.js` | Bot round simulation (host-driven); bot snap recording; finished-game redirect; avatar tinting fix |
+
+### Bot AI -- what's implemented
+
+**`js/bot.js`:**
+- `createBot(index, usedColors, usedAvatarIds)`: generates a bot with random unused avatar from all 9 characters, random unused player color from the 20-color palette, name from the BOT_NAMES roster
+- `getBotPlacement(stormR, boardR, existingNxNy)`: picks a normalized (nx, ny) position within the storm-safe zone; avoids existing stone clusters within 56px (2x snap radius); falls back to center-ish position after 40 failed attempts
+
+**Lobby bot fill (`js/lobby.js`):**
+- On host clicking Start Game: if < 2 human players, adds bots to reach 2
+- Each bot is written to Firebase before game starts, so all clients see them as real players
+- Host disables Start button during fill to prevent double-tap
+
+**Game bot simulation (`js/game.js`, host only):**
+- `scheduleBotMoves(round, duration)`: at the start of each round, host schedules 1-3 stone placements per bot with random delays (10-80% of round duration)
+- `_placeBotStone(bot, round)`: checks stone counts, picks polarity (80% plus / 20% minus), calls `getBotPlacement`, writes via `placeStone` to Firebase
+- `handleLocalSnap` updated: host also records snaps won by bots (so bot stones can absorb human stones)
+- `_finishGame`: host tallies snap scores across all rounds via `getSnapScores`, picks winner (tiebreak: most plusStones), writes `status: finished` to Firebase
+- Game ends after the round where `stormRadius` is already at its minimum (0.3)
+
+### Avatar tinting -- what's fixed
+
+`mix-blend-mode: multiply` was already on all avatar images in CSS. The fix was ensuring container backgrounds use the full player color (not 20% transparent):
+- `lobby.js` `buildPlayerSlot`: background changed from `color + '33'` to `color`
+- `game.js` `renderPlayerStrip`: added `background:${p.color}` to `.strip-avatar` inline style
+
+All 9 character avatars now tint correctly using player color in both lobby and game HUD, assuming their PNG backgrounds are white or transparent.
+
+### Firebase additions
+
+- `addBotToRoom(code, bot)`: writes bot player node
+- `finishGame(code, winnerId)`: sets `status: finished`, `winner`, `finishedAt`
+- `resetToLobby(code, playerIds)`: resets status, round, stormRadius, winner; resets all player stone counts to 50/5
+- `getSnapScores(code, maxRound)`: reads all rounds' snaps in parallel, returns `{ playerId: snapCount }` map
+
+### What's NOT built yet
+
+- Win / results screen (`screens/win.html`) -- `status: finished` redirect is wired in game.js but the screen is still the stub
+- Power-up activation for bots (stubbed -- power-up system not yet built)
+- Bot stone count read from live Firebase state (currently reads from `room` which may lag a frame behind; good enough for now)
+
+### Next task
+
+Build **win / results screen** (`screens/win.html` + `js/win.js`):
+1. Subscribe to room on load, read snap scores via `getSnapScores`
+2. Render winner card (avatar, name, snap count)
+3. Render full leaderboard sorted by snaps then stones
+4. Host sees [REMATCH] button -- calls `resetToLobby`, all clients redirect to lobby on `status: lobby`
+5. All players see [HOME] button
+
+---
