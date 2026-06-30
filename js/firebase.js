@@ -19,13 +19,13 @@ import {
 // Fill in your project values from the Firebase console.
 // Project settings → General → Your apps → Firebase SDK snippet → Config
 const FIREBASE_CONFIG = {
-  apiKey:            "REPLACE_ME",
-  authDomain:        "REPLACE_ME.firebaseapp.com",
-  databaseURL:       "https://REPLACE_ME-default-rtdb.firebaseio.com",
-  projectId:         "REPLACE_ME",
-  storageBucket:     "REPLACE_ME.appspot.com",
-  messagingSenderId: "REPLACE_ME",
-  appId:             "REPLACE_ME",
+  apiKey:            "AIzaSyBGJCnCePLUgBl0Ox_rlL_uvQHfMYcrTHk",
+  authDomain:        "polarity-7f643.firebaseapp.com",
+  databaseURL:       "https://polarity-7f643-default-rtdb.firebaseio.com",
+  projectId:         "polarity-7f643",
+  storageBucket:     "polarity-7f643.firebasestorage.app",
+  messagingSenderId: "788191889853",
+  appId:             "1:788191889853:web:dbc4e0b8a2565994e5ead4",
 };
 
 const app = initializeApp(FIREBASE_CONFIG);
