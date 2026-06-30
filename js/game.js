@@ -3,11 +3,11 @@ import {
   subscribeToRoom,
   placeStone, subscribeToStones,
   recordSnap, subscribeToSnaps,
-  advanceRound, finishGame, getSnapScores,
+  advanceRound, finishGame,
 } from './firebase.js';
 import {
   initPhysics, destroyPhysics,
-  addStone, removeStone, clearAllStones,
+  addStone, removeStone,
   getStonePositions, setStormRadius, updateBoardBounds,
 } from './physics.js';
 import { getBotPlacement } from './bot.js';
@@ -30,20 +30,21 @@ const btnPlus     = document.getElementById('btn-plus');
 const btnMinus    = document.getElementById('btn-minus');
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let room          = null;
-let me            = null;
-let selectedPol   = '+';
-let boardCX       = 0;
-let boardCY       = 0;
-let boardHalf     = 0;   // half the side length of the square board
-let physicsReady  = false;
-let roundActive   = false;
-let stormR        = 1.0;
-let timerInterval = null;
-let lastRound     = 0;
-let mySnapCount   = 0;
-let localStones   = new Map();
-let snapLog       = new Map();
+let room             = null;
+let me               = null;
+let selectedPol      = '+';
+let boardCX          = 0;
+let boardCY          = 0;
+let boardHalf        = 0;   // half the side length of the square board
+let physicsReady     = false;
+let roundActive      = false;
+let stormR           = 1.0;
+let timerInterval    = null;
+let lastRound        = 0;
+let mySnapCount      = 0;
+let localStones      = new Map();
+let snapLog          = new Map();
+let _finishTriggered = false;
 let unsubRoom, unsubStones, unsubSnaps;
 
 // ── Canvas ────────────────────────────────────────────────────────────────────
@@ -108,6 +109,21 @@ function onRoomUpdate(r) {
 
   renderPlayerStrip(r.players);
 
+  // Win detection: first player to reach 0 total stones wins (host triggers)
+  if (r.status === 'playing' && r.host === myId && !_finishTriggered) {
+    const players = r.players || {};
+    for (const [pid, p] of Object.entries(players)) {
+      const total = (p.plusStones ?? 1) + (p.minusStones ?? 1);
+      if (total === 0) {
+        _finishTriggered = true;
+        clearInterval(timerInterval);
+        roundActive = false;
+        setTimeout(() => finishGame(roomCode, pid), 100);
+        return;
+      }
+    }
+  }
+
   if (r.status === 'playing' && r.round !== lastRound) {
     lastRound = r.round;
     startNewRound(r.round, r.timerDuration ?? 60);
@@ -117,18 +133,13 @@ function onRoomUpdate(r) {
 // ── Round lifecycle ───────────────────────────────────────────────────────────
 function startNewRound(round, duration) {
   roundActive = true;
-  mySnapCount = 0;
   clearInterval(timerInterval);
-  snapCount.textContent = 'SNAP 0';
 
-  clearAllStones();
-  localStones.clear();
-  snapLog.clear();
-
-  unsubStones?.();
-  unsubSnaps?.();
-  unsubStones = subscribeToStones(roomCode, round, onStoneReceived);
-  unsubSnaps  = subscribeToSnaps(roomCode, round, onSnapReceived);
+  // Stones persist across rounds (storm board — never wipe the board)
+  // snapLog persists too (prevents duplicate snap processing)
+  // Just add new subscriptions for this round without destroying old ones
+  subscribeToStones(roomCode, round, onStoneReceived);
+  subscribeToSnaps(roomCode, round, onSnapReceived);
 
   if (room?.host === myId) {
     startHostTimer(duration);
@@ -163,20 +174,15 @@ async function doEndRound() {
 }
 
 async function _finishGame() {
-  const scores  = await getSnapScores(roomCode, room?.round ?? 1);
+  // Win condition: fewest total stones remaining
   const players = room?.players ?? {};
-  let winnerId = null;
-  let maxSnaps = -1;
-  for (const [pid, count] of Object.entries(scores)) {
-    if (!players[pid]) continue;
-    if (count > maxSnaps) { maxSnaps = count; winnerId = pid; }
+  let winnerId  = null;
+  let minStones = Infinity;
+  for (const [pid, p] of Object.entries(players)) {
+    const total = (p.plusStones ?? 0) + (p.minusStones ?? 0);
+    if (total < minStones) { minStones = total; winnerId = pid; }
   }
-  if (!winnerId) {
-    for (const [pid, p] of Object.entries(players)) {
-      if ((p.plusStones ?? 0) > (players[winnerId]?.plusStones ?? -1)) winnerId = pid;
-    }
-  }
-  await finishGame(roomCode, winnerId);
+  if (winnerId) await finishGame(roomCode, winnerId);
 }
 
 // ── Bot simulation (host only) ────────────────────────────────────────────────
@@ -243,7 +249,7 @@ async function onBoardTap(e) {
 }
 
 function onStoneReceived(id, stone) {
-  if (localStones.has(id) || snapLog.has(`absorbed_${id}`)) return;
+  if (localStones.has(id) || snapLog.has(`snapped_${id}`)) return;
   localStones.set(id, stone);
   addStone({
     id,
@@ -258,30 +264,34 @@ function onStoneReceived(id, stone) {
 function onSnapReceived(id, snap) {
   if (snapLog.has(id)) return;
   snapLog.set(id, snap);
-  snapLog.set(`absorbed_${snap.loserId}`, true);
-  if (localStones.has(snap.loserId)) {
-    removeStone(snap.loserId);
-    localStones.delete(snap.loserId);
+  // Mark both stones as snapped so they're never re-added
+  snapLog.set(`snapped_${snap.placerStoneId}`, true);
+  snapLog.set(`snapped_${snap.victimStoneId}`, true);
+  for (const stoneId of [snap.placerStoneId, snap.victimStoneId]) {
+    if (localStones.has(stoneId)) {
+      removeStone(stoneId);
+      localStones.delete(stoneId);
+    }
   }
 }
 
-function handleLocalSnap({ winnerId, loserId, winnerPlayerId }) {
-  const isMe        = winnerPlayerId === myId;
-  const isBotOnHost = room?.players?.[winnerPlayerId]?.isBot && room?.host === myId;
+function handleLocalSnap({ placerStoneId, victimStoneId, placerPlayerId }) {
+  const isMe        = placerPlayerId === myId;
+  const isBotOnHost = room?.players?.[placerPlayerId]?.isBot && room?.host === myId;
   if (!isMe && !isBotOnHost) return;
 
-  const snapId = `${winnerId}_vs_${loserId}`;
+  const snapId = `${placerStoneId}_vs_${victimStoneId}`;
   if (snapLog.has(snapId)) return;
 
   if (isMe) {
     haptics.snap();
     mySnapCount++;
     snapCount.textContent = `SNAP ${mySnapCount}`;
-    showToast('SNAP!');
+    showToast('SNAPPED — +2 RETURNED');
   }
 
   recordSnap(roomCode, room?.round ?? 1, {
-    id: snapId, winnerId, loserId, winnerPlayerId, at: Date.now(),
+    id: snapId, placerStoneId, victimStoneId, placerPlayerId, at: Date.now(),
   });
 }
 
@@ -320,56 +330,24 @@ function draw() {
   const W = canvas.width;
   const H = canvas.height;
 
-  // Dark surround
-  ctx.fillStyle = '#1A1A1A';
+  // Full-bleed cream board — no dark surround
+  ctx.fillStyle = '#F5F0E5';
   ctx.fillRect(0, 0, W, H);
 
-  const bx = boardCX - boardHalf;
-  const by = boardCY - boardHalf;
-  const bs = boardHalf * 2;
-
-  // Board fill (cream)
-  ctx.fillStyle = '#F5F0E8';
-  ctx.fillRect(bx, by, bs, bs);
-
-  // Dot grid (full board)
+  // Dot grid across full canvas
   drawDotGrid();
 
-  // Storm inner boundary
-  if (stormR < 1.0) {
-    const sh = boardHalf * stormR;
-
-    // Subtle darkened band outside storm
-    ctx.save();
-    ctx.fillStyle = 'rgba(26,26,26,0.18)';
-    // Top band
-    ctx.fillRect(bx, by, bs, boardCY - sh - by);
-    // Bottom band
-    ctx.fillRect(bx, boardCY + sh, bs, (by + bs) - (boardCY + sh));
-    // Left band
-    ctx.fillRect(bx, boardCY - sh, boardCX - sh - bx, sh * 2);
-    // Right band
-    ctx.fillRect(boardCX + sh, boardCY - sh, (bx + bs) - (boardCX + sh), sh * 2);
-    ctx.restore();
-
-    // Storm border — red dashed inner square
-    ctx.save();
-    ctx.strokeStyle = '#E63946';
-    ctx.lineWidth   = 1.5;
-    ctx.setLineDash([5, 4]);
-    ctx.strokeRect(boardCX - sh, boardCY - sh, sh * 2, sh * 2);
-    ctx.restore();
-  }
-
-  // Outer board border — dashed
+  // Storm boundary — dashed rect moves inward each round
+  // Never erases board; stones outside boundary just fade (handled in drawStone)
+  const sh = boardHalf * stormR;
   ctx.save();
-  ctx.strokeStyle = '#1A1A1A';
+  ctx.strokeStyle = '#E63946';
   ctx.lineWidth   = 1.5;
-  ctx.setLineDash([4, 4]);
-  ctx.strokeRect(bx, by, bs, bs);
+  ctx.setLineDash([5, 4]);
+  ctx.strokeRect(boardCX - sh, boardCY - sh, sh * 2, sh * 2);
   ctx.restore();
 
-  // Stones
+  // Stones (outside-storm stones drawn at 30% opacity)
   for (const stone of getStonePositions()) {
     drawStone(stone);
   }
@@ -378,16 +356,11 @@ function draw() {
 function drawDotGrid() {
   const spacing = 28;
   const dotR    = 1.5;
-  ctx.fillStyle = '#CCCCCC';
+  ctx.fillStyle = 'rgba(28,18,8,0.12)';
 
-  const x0 = boardCX - boardHalf;
-  const y0 = boardCY - boardHalf;
-  const x1 = boardCX + boardHalf;
-  const y1 = boardCY + boardHalf;
-
-  // Align grid to board edge
-  for (let gx = x0 + spacing / 2; gx < x1; gx += spacing) {
-    for (let gy = y0 + spacing / 2; gy < y1; gy += spacing) {
+  // Cover full canvas
+  for (let gx = spacing / 2; gx < canvas.width; gx += spacing) {
+    for (let gy = spacing / 2; gy < canvas.height; gy += spacing) {
       ctx.beginPath();
       ctx.arc(gx, gy, dotR, 0, Math.PI * 2);
       ctx.fill();
@@ -400,7 +373,14 @@ function drawStone({ x, y, polarity, playerId }) {
   const color = p?.color ?? '#1A1A1A';
   const r     = 12;
 
+  // Stones outside the storm boundary fade to 30% opacity, non-interactive
+  const dx           = x - boardCX;
+  const dy           = y - boardCY;
+  const sh           = boardHalf * stormR;
+  const outsideStorm = Math.abs(dx) > sh || Math.abs(dy) > sh;
+
   ctx.save();
+  if (outsideStorm) ctx.globalAlpha = 0.3;
   if (polarity === '+') {
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -414,7 +394,7 @@ function drawStone({ x, y, polarity, playerId }) {
     ctx.stroke();
 
     ctx.fillStyle    = '#F5F0E8';
-    ctx.font         = 'bold 13px Courier New';
+    ctx.font         = 'bold 13px Space Mono, monospace';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('+', x, y + 0.5);
@@ -437,7 +417,7 @@ function drawStone({ x, y, polarity, playerId }) {
     ctx.stroke();
 
     ctx.fillStyle    = '#1A1A1A';
-    ctx.font         = 'bold 13px Courier New';
+    ctx.font         = 'bold 13px Space Mono, monospace';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('−', x, y + 0.5);

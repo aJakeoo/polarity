@@ -152,14 +152,15 @@ export function subscribeToStones(code, round, cb) {
 }
 
 export async function recordSnap(code, round, snap) {
+  // Snap is a PENALTY: both stones return to the placer's inventory (+2)
   await update(ref(db), {
     [`rooms/${code}/rounds/${round}/snaps/${snap.id}`]: {
-      winnerId:       snap.winnerId,
-      loserId:        snap.loserId,
-      winnerPlayerId: snap.winnerPlayerId,
+      placerStoneId:  snap.placerStoneId,
+      victimStoneId:  snap.victimStoneId,
+      placerPlayerId: snap.placerPlayerId,
       at:             snap.at,
     },
-    [`rooms/${code}/players/${snap.winnerPlayerId}/plusStones`]: increment(1),
+    [`rooms/${code}/players/${snap.placerPlayerId}/plusStones`]: increment(2),
   });
 }
 
@@ -243,7 +244,7 @@ export async function getSnapScores(code, maxRound) {
   for (const snap of results) {
     if (!snap.exists()) continue;
     for (const s of Object.values(snap.val())) {
-      scores[s.winnerPlayerId] = (scores[s.winnerPlayerId] || 0) + 1;
+      scores[s.placerPlayerId] = (scores[s.placerPlayerId] || 0) + 1;
     }
   }
   return scores;

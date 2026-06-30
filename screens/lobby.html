@@ -3,23 +3,58 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <meta name="theme-color" content="#F5F0E8">
+  <meta name="theme-color" content="#F5F0E5">
   <title>POLARITY — Lobby</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap">
   <link rel="stylesheet" href="../css/style.css">
   <style>
-    .lobby-header {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
+    /* ---- Title section (centered, border-bottom per DC) ---- */
+    .lobby-title-wrap {
+      position: relative;
+      text-align: center;
+      padding-bottom: 22px;
       margin-bottom: 20px;
+      border-bottom: 2.5px solid var(--ink);
     }
 
-    .lobby-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+    .lobby-title-wrap .leave-btn {
+      position: absolute;
+      top: 0;
+      right: 0;
+      font-size: 9px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--border);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 4px 0;
     }
 
+    .lobby-title-wrap .leave-btn:active { opacity: 0.6; }
+
+    .lobby-main-title {
+      font-size: 34px;
+      font-weight: bold;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      line-height: 1;
+      margin: 10px 0 0;
+    }
+
+    .lobby-subtitle {
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    /* ---- Room code section ---- */
     .room-section {
       display: flex;
       flex-direction: column;
@@ -28,8 +63,8 @@
     }
 
     .leave-btn {
-      font-size: 10px;
-      letter-spacing: 0.1em;
+      font-size: 9px;
+      letter-spacing: 2px;
       text-transform: uppercase;
       color: var(--border);
       background: transparent;
@@ -50,15 +85,16 @@
 <body>
   <div class="screen">
 
-    <!-- Top bar: logo + leave -->
-    <div class="lobby-top gap-20">
-      <div class="logo-small">
-        <div class="logo-stones">
-          <span class="stone-icon plus">+</span>
-          <span class="stone-icon minus">−</span>
-        </div>
-        <span class="logo-title">POLARITY</span>
-      </div>
+    <!-- Title section: centered logo + POLARITY + tagline + leave link -->
+    <div class="lobby-title-wrap gap-20">
+      <svg width="68" height="40" viewBox="0 0 68 40" class="logo-mark">
+        <circle cx="18" cy="20" r="16" fill="#1C1208"></circle>
+        <text x="18" y="25" text-anchor="middle" fill="#F5F0E5" font-size="16" font-weight="700" font-family="'Space Mono',monospace">+</text>
+        <circle cx="50" cy="20" r="15" fill="#F5F0E5" stroke="#1C1208" stroke-width="2.5"></circle>
+        <text x="50" y="25" text-anchor="middle" fill="#1C1208" font-size="18" font-weight="700" font-family="'Space Mono',monospace">−</text>
+      </svg>
+      <div class="lobby-main-title">POLARITY</div>
+      <div class="lobby-subtitle">MAGNETIC BATTLE v1.0</div>
       <button class="leave-btn" id="leave-btn">[ LEAVE ]</button>
     </div>
 
@@ -89,7 +125,6 @@
       <button class="btn btn-outline" id="share-btn">[ SHARE ROOM CODE ]</button>
       <button class="btn btn-primary" id="start-btn" style="display:none">[ START GAME ]</button>
       <button class="btn btn-primary" id="ready-btn" style="display:none">[ READY ]</button>
-      <button class="leave-btn" style="display:none"><!-- spacer --></button>
     </div>
 
   </div><!-- /screen -->

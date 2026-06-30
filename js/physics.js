@@ -154,16 +154,19 @@ function _checkSnaps() {
       const dy = b.body.position.y - a.body.position.y;
       if (Math.hypot(dx, dy) > SNAP_RADIUS) continue;
 
-      const [winnerId, winner, loserId] =
+      // Newer stone = placer (triggered the snap) — PENALTY: both stones return to placer
+      const [placerStoneId, placer, victimStoneId] =
         a.placedAt >= b.placedAt
           ? [idA, a, idB]
           : [idB, b, idA];
 
-      console.log(`[SNAP] ${winner.playerId} absorbed ${b.playerId === winner.playerId ? a.playerId : b.playerId} | winner=${winnerId} loser=${loserId}`);
-      _snapPending.add(loserId);
+      console.log(`[SNAP] penalty to ${placer.playerId} | placer=${placerStoneId} victim=${victimStoneId}`);
+      _snapPending.add(placerStoneId);
+      _snapPending.add(victimStoneId);
       setTimeout(() => {
-        removeStone(loserId);
-        _onSnap?.({ winnerId, loserId, winnerPlayerId: winner.playerId });
+        removeStone(placerStoneId);
+        removeStone(victimStoneId);
+        _onSnap?.({ placerStoneId, victimStoneId, placerPlayerId: placer.playerId });
       }, 0);
     }
   }

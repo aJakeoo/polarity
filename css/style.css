@@ -1,13 +1,26 @@
 /* ============================================================
    POLARITY — Global Design System
    Retro / Apple Lisa / Early Mac Aesthetic
+   Source of truth: Polarity.dc.html (DesignSync)
    ============================================================ */
 
 :root {
-  --paper:   #F5F0E8;
-  --ink:     #1A1A1A;
-  --border:  #CCCCCC;
-  --white:   #FFFFFF;
+  --paper:      #F5F0E5;
+  --ink:        #1C1208;
+  --muted:      #6B5D4A;
+  --border:     #9E8C6E;
+  --waiting-bg: #EDE6D4;
+  --white:      #FFFFFF;
+}
+
+@keyframes polarityPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.52; transform: scale(0.93); }
+}
+
+@keyframes dotBlink {
+  0%, 39%   { opacity: 1; }
+  40%, 100% { opacity: 0.1; }
 }
 
 *, *::before, *::after {
@@ -24,7 +37,7 @@ html {
 body {
   background: var(--paper);
   color: var(--ink);
-  font-family: 'Courier New', Courier, monospace;
+  font-family: 'Space Mono', 'Courier New', monospace;
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
 }
@@ -33,13 +46,13 @@ body {
 .screen {
   max-width: 480px;
   margin: 0 auto;
-  padding: 32px 20px 40px;
+  padding: 32px 22px 40px;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
 
-/* ---- Logo block ---- */
+/* ---- Logo stones (SVG-based in DC; legacy class kept for JS-rendered areas) ---- */
 .logo-stones {
   display: flex;
   gap: 8px;
@@ -48,32 +61,25 @@ body {
 }
 
 .stone-icon {
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 12px;
   font-weight: bold;
   line-height: 1;
+  flex-shrink: 0;
 }
 
-.stone-icon.plus {
-  background: var(--ink);
-  color: var(--paper);
-}
-
-.stone-icon.minus {
-  background: var(--white);
-  color: var(--ink);
-  border: 2px solid var(--ink);
-}
+.stone-icon.plus  { background: var(--ink); color: var(--paper); }
+.stone-icon.minus { background: var(--white); color: var(--ink); border: 2px solid var(--ink); }
 
 .logo-title {
-  font-size: 36px;
+  font-size: 34px;
   font-weight: bold;
-  letter-spacing: 0.12em;
+  letter-spacing: 4px;
   text-transform: uppercase;
   text-align: center;
   line-height: 1;
@@ -81,11 +87,11 @@ body {
 
 .logo-tagline {
   font-size: 10px;
-  letter-spacing: 0.18em;
+  font-weight: bold;
+  letter-spacing: 4px;
   text-transform: uppercase;
   text-align: center;
-  color: var(--ink);
-  opacity: 0.45;
+  color: var(--muted);
   margin-top: 6px;
 }
 
@@ -97,7 +103,7 @@ body {
 }
 
 .logo-small .logo-title {
-  font-size: 20px;
+  font-size: 18px;
   text-align: left;
 }
 
@@ -107,22 +113,23 @@ body {
 }
 
 .logo-small .stone-icon {
-  width: 20px;
-  height: 20px;
-  font-size: 11px;
+  width: 17px;
+  height: 17px;
+  font-size: 10px;
 }
 
 /* ---- Section label ---- */
 .section-label {
   font-size: 10px;
-  letter-spacing: 0.14em;
+  font-weight: bold;
+  letter-spacing: 3px;
   text-transform: uppercase;
-  color: var(--border);
-  margin-bottom: 8px;
+  color: var(--muted);
+  margin-bottom: 10px;
   display: block;
 }
 
-/* ---- Room code tiles ---- */
+/* ---- Room code tiles (lobby display — white + hard shadow) ---- */
 .code-tiles {
   display: flex;
   gap: 8px;
@@ -130,16 +137,17 @@ body {
 }
 
 .code-tile {
-  width: 58px;
-  height: 58px;
-  background: var(--ink);
-  color: var(--paper);
+  width: 62px;
+  height: 70px;
+  background: var(--white);
+  color: var(--ink);
+  border: 2.5px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 26px;
+  font-size: 32px;
   font-weight: bold;
-  border-radius: 3px;
   letter-spacing: 0;
   user-select: none;
 }
@@ -152,20 +160,19 @@ body {
 }
 
 .code-input-tile {
-  width: 58px;
-  height: 58px;
+  width: 62px;
+  height: 70px;
   text-align: center;
-  font-size: 26px;
+  font-size: 28px;
   font-weight: bold;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: 'Space Mono', 'Courier New', monospace;
   text-transform: uppercase;
   letter-spacing: 0;
   background: var(--white);
-  border: 2px solid var(--ink);
-  border-radius: 3px;
+  border: 2.5px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
   color: var(--ink);
   caret-color: transparent;
-  transition: background 0.1s, color 0.1s;
   -webkit-appearance: none;
 }
 
@@ -188,9 +195,10 @@ body {
 .field-label {
   display: block;
   font-size: 10px;
-  letter-spacing: 0.14em;
+  font-weight: bold;
+  letter-spacing: 3px;
   text-transform: uppercase;
-  color: var(--border);
+  color: var(--muted);
   margin-bottom: 8px;
 }
 
@@ -198,14 +206,13 @@ body {
   display: block;
   width: 100%;
   padding: 13px 14px;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: 'Space Mono', 'Courier New', monospace;
   font-size: 15px;
   font-weight: bold;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   background: var(--white);
-  border: 1.5px solid var(--ink);
-  border-radius: 3px;
+  border: 2px solid var(--ink);
   color: var(--ink);
   -webkit-appearance: none;
 }
@@ -221,41 +228,44 @@ body {
   letter-spacing: 0.04em;
 }
 
-/* ---- Buttons ---- */
+/* ---- Buttons (all border-radius: 0 per DC) ---- */
 .btn {
   display: block;
   width: 100%;
-  padding: 15px 20px;
-  font-family: 'Courier New', Courier, monospace;
+  padding: 16px 20px;
+  font-family: 'Space Mono', 'Courier New', monospace;
   font-size: 13px;
   font-weight: bold;
-  letter-spacing: 0.12em;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
-  border-radius: 3px;
   cursor: pointer;
-  border: 1.5px solid var(--ink);
+  border: 2.5px solid var(--ink);
   text-align: center;
-  transition: opacity 0.12s;
   -webkit-tap-highlight-color: transparent;
 }
 
 .btn:active:not(:disabled) {
-  opacity: 0.75;
-  transform: translateY(1px);
+  transform: translate(2px, 2px);
+  box-shadow: none !important;
 }
 
 .btn-primary {
   background: var(--ink);
   color: var(--paper);
+  box-shadow: 5px 5px 0 rgba(28, 18, 8, 0.3);
 }
 
 .btn-outline {
-  background: transparent;
+  background: var(--paper);
   color: var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
 }
 
 .btn:disabled {
-  opacity: 0.3;
+  background: #D4CABC;
+  color: #8A7C6A;
+  border-color: var(--border);
+  box-shadow: 2px 2px 0 var(--border);
   cursor: not-allowed;
 }
 
@@ -270,9 +280,10 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: var(--border);
+  color: var(--muted);
   font-size: 11px;
-  letter-spacing: 0.1em;
+  font-weight: bold;
+  letter-spacing: 2px;
   margin: 20px 0;
 }
 
@@ -284,15 +295,13 @@ body {
   background: var(--border);
 }
 
-/* ---- Player count badge ---- */
+/* ---- Player count ---- */
 .player-count {
-  font-size: 11px;
-  letter-spacing: 0.1em;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 3px;
   text-transform: uppercase;
-  background: var(--paper);
-  border: 1.5px solid var(--ink);
-  border-radius: 3px;
-  padding: 7px 14px;
+  color: var(--muted);
   display: inline-block;
 }
 
@@ -307,34 +316,29 @@ body {
 
 .player-list::-webkit-scrollbar { display: none; }
 
-/* ---- Player slot ---- */
+/* ---- Player slot (hard shadow per DC) ---- */
 .player-slot {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 11px 14px;
+  padding: 12px 14px;
   background: var(--white);
-  border: 1.5px solid var(--ink);
-  border-radius: 3px;
+  border: 2.5px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
   min-height: 60px;
   flex-shrink: 0;
 }
 
 .player-slot.waiting {
-  border-style: dashed;
-  border-color: var(--border);
-  background: transparent;
+  background: var(--waiting-bg);
+  border: 2px dashed var(--border);
+  box-shadow: none;
 }
 
-.player-slot.is-me {
-  cursor: pointer;
-}
+.player-slot.is-me { cursor: pointer; }
+.player-slot.is-me:active { opacity: 0.8; }
 
-.player-slot.is-me:active {
-  opacity: 0.8;
-}
-
-/* ---- Avatar circle ---- */
+/* ---- Avatar circle (50% = only exception to flat-corner rule) ---- */
 .avatar-circle {
   width: 38px;
   height: 38px;
@@ -359,7 +363,7 @@ body {
 .avatar-placeholder {
   font-size: 18px;
   font-weight: bold;
-  color: var(--border);
+  color: var(--white);
 }
 
 /* ---- Player name ---- */
@@ -367,7 +371,7 @@ body {
   flex: 1;
   font-size: 13px;
   font-weight: bold;
-  letter-spacing: 0.08em;
+  letter-spacing: 1px;
   text-transform: uppercase;
   min-width: 0;
   overflow: hidden;
@@ -379,35 +383,23 @@ body {
   color: var(--border);
   font-weight: normal;
   font-size: 12px;
+  letter-spacing: 1px;
 }
 
-/* ---- Badges ---- */
+/* ---- Badges (per DC: HOST solid black, READY green text only) ---- */
 .badge {
-  padding: 4px 9px;
-  font-size: 10px;
+  padding: 3px 8px;
+  font-size: 9px;
   font-weight: bold;
-  letter-spacing: 0.1em;
+  letter-spacing: 2px;
   text-transform: uppercase;
-  border-radius: 2px;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
-.badge-host {
-  background: var(--ink);
-  color: var(--paper);
-}
-
-.badge-ready {
-  background: var(--ink);
-  color: var(--paper);
-}
-
-.badge-waiting {
-  background: transparent;
-  color: var(--border);
-  border: 1px dashed var(--border);
-}
+.badge-host    { background: var(--ink); color: var(--paper); }
+.badge-ready   { background: transparent; color: #4A7A58; }
+.badge-waiting { background: transparent; color: var(--border); }
 
 /* ---- Scroll hint ---- */
 .scroll-hint {
@@ -418,7 +410,7 @@ body {
   line-height: 1;
 }
 
-/* ---- Spacer ---- */
+/* ---- Spacer / gaps ---- */
 .spacer { flex: 1; }
 .gap-6  { margin-bottom: 6px; }
 .gap-8  { margin-bottom: 8px; }
@@ -432,16 +424,13 @@ body {
   font-size: 11px;
   letter-spacing: 0.06em;
   color: var(--ink);
-  border: 1.5px solid var(--ink);
-  border-radius: 3px;
+  border: 2px solid var(--ink);
   padding: 10px 14px;
   text-transform: uppercase;
   display: none;
 }
 
-.error-msg.visible {
-  display: block;
-}
+.error-msg.visible { display: block; }
 
 /* ---- Toast notification ---- */
 .toast {
@@ -451,13 +440,12 @@ body {
   transform: translateX(-50%) translateY(20px);
   background: var(--ink);
   color: var(--paper);
-  font-family: 'Courier New', Courier, monospace;
+  font-family: 'Space Mono', 'Courier New', monospace;
   font-size: 11px;
   font-weight: bold;
-  letter-spacing: 0.1em;
+  letter-spacing: 2px;
   text-transform: uppercase;
   padding: 12px 20px;
-  border-radius: 3px;
   white-space: nowrap;
   opacity: 0;
   transition: opacity 0.2s, transform 0.2s;
@@ -474,7 +462,7 @@ body {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(26, 26, 26, 0.5);
+  background: rgba(28, 18, 8, 0.5);
   z-index: 100;
   display: flex;
   align-items: flex-end;
@@ -493,8 +481,7 @@ body {
   max-width: 480px;
   margin: 0 auto;
   background: var(--paper);
-  border-top: 2px solid var(--ink);
-  border-radius: 6px 6px 0 0;
+  border-top: 2.5px solid var(--ink);
   padding: 24px 20px 40px;
   transform: translateY(100%);
   transition: transform 0.25s cubic-bezier(0.32, 0, 0.22, 1);
@@ -505,12 +492,12 @@ body {
 }
 
 .modal-header {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: bold;
-  letter-spacing: 0.14em;
+  letter-spacing: 3px;
   text-transform: uppercase;
   margin-bottom: 20px;
-  color: var(--border);
+  color: var(--muted);
 }
 
 .avatar-grid {
@@ -532,7 +519,6 @@ body {
   width: 56px;
   height: 56px;
   border-width: 2px;
-  transition: border-width 0.1s;
 }
 
 .avatar-option.selected .avatar-circle {
@@ -542,9 +528,9 @@ body {
 
 .avatar-option .avatar-label {
   font-size: 9px;
-  letter-spacing: 0.08em;
+  letter-spacing: 1px;
   text-transform: uppercase;
-  color: var(--border);
+  color: var(--muted);
   text-align: center;
 }
 
@@ -560,9 +546,9 @@ body {
 /* ---- Edit hint ---- */
 .edit-hint {
   font-size: 9px;
-  letter-spacing: 0.1em;
+  letter-spacing: 1px;
   text-transform: uppercase;
-  color: var(--border);
+  color: var(--muted);
   text-align: center;
   margin-top: 4px;
 }
@@ -570,9 +556,9 @@ body {
 /* ---- Loading state ---- */
 .loading-text {
   font-size: 12px;
-  letter-spacing: 0.12em;
+  letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--border);
+  color: var(--muted);
   text-align: center;
   padding: 40px 0;
 }
@@ -582,4 +568,28 @@ hr.divider {
   border: none;
   border-top: 1px solid var(--border);
   margin: 20px 0;
+}
+
+/* ---- Category divider (shop/win sections) ---- */
+.cat-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 8px;
+}
+
+.cat-divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--ink);
+  opacity: 0.18;
+}
+
+.cat-divider-text {
+  font-size: 8px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
 }
