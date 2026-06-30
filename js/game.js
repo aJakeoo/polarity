@@ -3,8 +3,9 @@ import {
   subscribeToRoom,
   placeStone, subscribeToStones,
   recordSnap, subscribeToSnaps,
-  endRound, startRound,
+  endRound, startRound, finishGame, getSnapScores,
 } from './firebase.js';
+import { getBotPlacement } from './bot.js';
 import {
   initPhysics, destroyPhysics,
   addStone, removeStone, clearAllStones,
@@ -106,6 +107,11 @@ function onRoomUpdate(r) {
 
   renderPlayerStrip(r.players);
 
+  if (r.status === 'finished') {
+    window.location.href = `win.html?room=${roomCode}`;
+    return;
+  }
+
   if (r.status === 'playing' && r.round !== lastRound) {
     lastRound = r.round;
     startNewRound(r.round, r.timerDuration ?? 10);
@@ -130,6 +136,8 @@ function startNewRound(round, duration) {
   unsubSnaps  = subscribeToSnaps(roomCode, round, onSnapReceived);
 
   startTimer(duration);
+
+  if (room?.host === myId) scheduleBotMoves(round, duration);
 }
 
 function startTimer(seconds) {
@@ -152,12 +160,77 @@ function startTimer(seconds) {
 
 async function doEndRound() {
   const newStorm = parseFloat(Math.max(0.3, stormR - 0.12).toFixed(2));
+  // Game ends when storm is already at its tightest (no further shrink)
+  if (newStorm <= 0.3 && stormR <= 0.3) {
+    try { await _finishGame(); } catch (_) {}
+    return;
+  }
   try {
     await endRound(roomCode, newStorm);
   } catch (e) {
-    // silently retry once
     setTimeout(() => endRound(roomCode, newStorm).catch(() => {}), 1000);
   }
+}
+
+async function _finishGame() {
+  const scores = await getSnapScores(roomCode, room?.round ?? 1);
+  const players = room?.players ?? {};
+  let winnerId = null;
+  let maxSnaps = -1;
+  for (const [pid, count] of Object.entries(scores)) {
+    if (!players[pid]) continue;
+    if (count > maxSnaps || (count === maxSnaps && (players[pid].plusStones ?? 0) > (players[winnerId]?.plusStones ?? 0))) {
+      maxSnaps = count;
+      winnerId = pid;
+    }
+  }
+  // If nobody snapped anything, winner is whoever has most plus stones
+  if (!winnerId) {
+    for (const [pid, p] of Object.entries(players)) {
+      if ((p.plusStones ?? 0) > (players[winnerId]?.plusStones ?? -1)) {
+        winnerId = pid;
+      }
+    }
+  }
+  await finishGame(roomCode, winnerId);
+}
+
+// ── Bot simulation (host only) ────────────────────────────────────────────────
+
+function scheduleBotMoves(round, duration) {
+  const bots = Object.entries(room?.players || {})
+    .filter(([, p]) => p.isBot)
+    .map(([id, p]) => ({ id, ...p }));
+
+  for (const bot of bots) {
+    const count = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      const delay = (0.1 + Math.random() * 0.7) * duration * 1000;
+      setTimeout(() => _placeBotStone(bot, round), delay);
+    }
+  }
+}
+
+async function _placeBotStone(bot, round) {
+  if (!roundActive) return;
+  if (room?.round !== round) return;
+
+  const pol      = Math.random() < 0.8 ? '+' : '-';
+  const countKey = pol === '+' ? 'plusStones' : 'minusStones';
+  const bp       = room?.players?.[bot.id];
+  if (!bp || (bp[countKey] ?? 0) <= 0) return;
+
+  const existingNxNy = [...localStones.values()].map(s => ({ nx: s.nx, ny: s.ny }));
+  const { nx, ny }   = getBotPlacement(stormR, boardR, existingNxNy);
+
+  try {
+    await placeStone(roomCode, round, {
+      owner:    bot.id,
+      polarity: pol,
+      nx, ny,
+      placedAt: Date.now(),
+    });
+  } catch (_) {}
 }
 
 function onRoundEnd() {
@@ -249,13 +322,14 @@ function onSnapReceived(id, snap) {
 }
 
 function handleLocalSnap({ winnerId, loserId, winnerPlayerId }) {
-  if (winnerPlayerId !== myId) return;
+  const isMe        = winnerPlayerId === myId;
+  const isBotOnHost = room?.players?.[winnerPlayerId]?.isBot && room?.host === myId;
+  if (!isMe && !isBotOnHost) return;
 
   const snapId = `${winnerId}_vs_${loserId}`;
   if (snapLog.has(snapId)) return;
 
-  haptics.snap();
-  showToast('SNAP!');
+  if (isMe) { haptics.snap(); showToast('SNAP!'); }
 
   recordSnap(roomCode, room?.round ?? 1, {
     id:              snapId,
@@ -281,7 +355,7 @@ function renderPlayerStrip(players) {
     const src  = avatarSrc(p.avatar, true);
     return `
       <div class="strip-player">
-        <div class="strip-avatar${isMe ? ' is-me' : ''}" style="border-color:${p.color}">
+        <div class="strip-avatar${isMe ? ' is-me' : ''}" style="border-color:${p.color};background:${p.color}">
           <img src="${src}" alt="${p.name}">
         </div>
         <div class="strip-counts" style="color:${p.color}">+${p.plusStones ?? 0}&nbsp;−${p.minusStones ?? 0}</div>

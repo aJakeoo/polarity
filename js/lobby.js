@@ -15,7 +15,9 @@ import {
   setAvatar,
   startGame,
   removePlayer,
+  addBotToRoom,
 } from './firebase.js';
+import { createBot } from './bot.js';
 import { haptics } from './haptics.js';
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -130,7 +132,7 @@ function buildPlayerSlot(id, player, isMine) {
   const avatarDiv = document.createElement('div');
   avatarDiv.className = 'avatar-circle';
   avatarDiv.style.borderColor = player.color || '#1A1A1A';
-  avatarDiv.style.background  = (player.color || '#CCCCCC') + '33';
+  avatarDiv.style.background  = player.color || '#CCCCCC';
 
   const img = document.createElement('img');
   img.src = avatarSrc(player.avatar, true);
@@ -230,10 +232,31 @@ async function onToggleReady() {
 
 async function onStartGame() {
   haptics.tap();
+  const btn = document.getElementById('start-btn');
+  btn.disabled = true;
   try {
+    await fillBotsIfNeeded();
     await startGame(roomCode);
   } catch (e) {
     showToast('[ ERROR STARTING GAME ]');
+    btn.disabled = false;
+  }
+}
+
+async function fillBotsIfNeeded() {
+  const players = currentRoom?.players || {};
+  const humans  = Object.values(players).filter(p => !p.isBot);
+  if (humans.length >= 2) return;
+
+  const usedColors  = Object.values(players).map(p => p.color);
+  const usedAvatars = Object.values(players).map(p => p.avatar);
+  const needed = 2 - humans.length;
+
+  for (let i = 0; i < needed; i++) {
+    const bot = createBot(i, usedColors, usedAvatars);
+    await addBotToRoom(roomCode, bot);
+    usedColors.push(bot.color);
+    usedAvatars.push(bot.avatar);
   }
 }
 

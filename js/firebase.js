@@ -183,3 +183,59 @@ export async function startRound(code, round) {
     round,
   });
 }
+
+export async function addBotToRoom(code, bot) {
+  await set(ref(db, `rooms/${code}/players/${bot.id}`), {
+    name:        bot.name,
+    avatar:      bot.avatar,
+    color:       bot.color,
+    plusStones:  50,
+    minusStones: 5,
+    flux:        0,
+    powerUps:    [null, null, null],
+    isBot:       true,
+    isHost:      false,
+    isReady:     true,
+    joinedAt:    serverTimestamp(),
+  });
+}
+
+export async function finishGame(code, winnerId) {
+  await update(ref(db, `rooms/${code}`), {
+    status:     'finished',
+    winner:     winnerId,
+    finishedAt: serverTimestamp(),
+  });
+}
+
+export async function resetToLobby(code, playerIds) {
+  const updates = {
+    [`rooms/${code}/status`]:      'lobby',
+    [`rooms/${code}/round`]:       0,
+    [`rooms/${code}/stormRadius`]: 1.0,
+    [`rooms/${code}/winner`]:      null,
+    [`rooms/${code}/finishedAt`]:  null,
+  };
+  for (const id of playerIds) {
+    updates[`rooms/${code}/players/${id}/plusStones`]  = 50;
+    updates[`rooms/${code}/players/${id}/minusStones`] = 5;
+    updates[`rooms/${code}/players/${id}/isReady`]     = false;
+  }
+  await update(ref(db), updates);
+}
+
+export async function getSnapScores(code, maxRound) {
+  const scores = {};
+  const promises = [];
+  for (let r = 1; r <= maxRound; r++) {
+    promises.push(get(ref(db, `rooms/${code}/rounds/${r}/snaps`)));
+  }
+  const results = await Promise.all(promises);
+  for (const snap of results) {
+    if (!snap.exists()) continue;
+    for (const s of Object.values(snap.val())) {
+      scores[s.winnerPlayerId] = (scores[s.winnerPlayerId] || 0) + 1;
+    }
+  }
+  return scores;
+}
