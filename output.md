@@ -282,3 +282,38 @@ Build **win / results screen** (`screens/win.html` + `js/win.js`):
 - Bot AI power-up activation
 
 ---
+
+## Session 5 -- 2026-06-30
+
+### What was done
+
+**Physics snap mechanic fixed. Round timer removed from player UI.** Commit: `087e185`
+
+**Files changed:**
+
+| File | Change |
+|------|--------|
+| `js/physics.js` | FORCE_K 0.000013 to 0.015; frictionAir 0.09 to 0.015; SNAP_RADIUS 28px to 48px; console.log on snap |
+| `js/firebase.js` | Added `advanceRound(code, round, stormRadius)`; timerDuration default 10s to 60s |
+| `js/game.js` | Timer now host-only silent; removed overlay/round-end UI; uses `advanceRound` for seamless transitions |
+| `screens/game.html` | Removed round overlay HTML and timer display element |
+
+### Physics fix -- root cause
+
+`FORCE_K = 0.000013` produced force of ~5e-9 at 50px separation. With frictionAir=0.09 the terminal velocity was ~3.5e-8 px/frame (imperceptibly tiny). Corrected values:
+
+- `FORCE_K = 0.015` -- produces ~6e-6 force at 50px, terminal velocity ~14 px/sec; stones placed 80px apart close to snap in ~2.5 seconds
+- `frictionAir = 0.015` -- low drag allows momentum to build as stones approach
+- `SNAP_RADIUS = 48px` -- larger threshold, snap triggers before stones physically overlap
+
+### Round timer removal
+
+Rounds now advance seamlessly: host timer fires silently, calls `advanceRound()` which atomically writes `{status:'playing', round:N+1, stormRadius:X}`. All clients detect `round` change and start new round immediately. No overlay, no button press, no `round_end` status.
+
+### What's NOT built yet
+
+- DesignSync CSS/HTML update (Polarity.dc.html import -- was deferred for physics fix)
+- Power-up purchase / activation
+- Sound
+
+---
