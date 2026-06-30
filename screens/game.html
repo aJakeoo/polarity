@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1A1A1A">
+  <title>POLARITY — Game</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <script src="https://unpkg.com/matter-js@0.19.0/build/matter.min.js"></script>
+  <style>
+    body { background: #1A1A1A; overflow: hidden; }
+
+    #game-wrap {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      max-width: 480px;
+      margin: 0 auto;
+      background: var(--paper);
+    }
+
+    /* ── Top HUD ── */
+    #hud-top {
+      height: 50px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      border-bottom: 1.5px solid var(--ink);
+      flex-shrink: 0;
+      gap: 8px;
+    }
+
+    .hud-logo {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    .hud-logo .stone-icon { width: 18px; height: 18px; font-size: 10px; }
+
+    .hud-title {
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 0.1em;
+    }
+
+    .hud-sep { color: var(--border); font-size: 12px; }
+
+    #hud-round {
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--border);
+    }
+
+    #hud-timer {
+      font-size: 20px;
+      font-weight: bold;
+      letter-spacing: 0.04em;
+      min-width: 32px;
+      text-align: right;
+      transition: color 0.2s;
+    }
+
+    #hud-timer.urgent { color: #E63946; }
+
+    /* ── Canvas ── */
+    #canvas-wrap {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #1A1A1A;
+    }
+
+    #board-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    /* ── Round overlay ── */
+    #round-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(245, 240, 232, 0.94);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      z-index: 10;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    #round-overlay.visible {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .overlay-title {
+      font-size: 15px;
+      font-weight: bold;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    #round-results {
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--border);
+      text-align: center;
+      line-height: 2;
+    }
+
+    #overlay-sub {
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--border);
+    }
+
+    /* ── Bottom HUD ── */
+    #hud-bottom {
+      flex-shrink: 0;
+      border-top: 1.5px solid var(--ink);
+      background: var(--paper);
+    }
+
+    /* Player strip */
+    #player-strip {
+      display: flex;
+      gap: 12px;
+      padding: 8px 14px 6px;
+      overflow-x: auto;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #player-strip::-webkit-scrollbar { display: none; }
+
+    .strip-player {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+
+    .strip-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid var(--ink);
+      overflow: hidden;
+      background: var(--border);
+    }
+
+    .strip-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      mix-blend-mode: multiply;
+    }
+
+    .strip-avatar.is-me { border-width: 2.5px; }
+
+    .strip-counts {
+      font-size: 9px;
+      font-weight: bold;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+    }
+
+    .strip-name {
+      font-size: 8px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--border);
+      max-width: 42px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Stone selector */
+    #stone-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px 14px;
+    }
+
+    .stone-btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 12px 10px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1.5px solid var(--ink);
+      border-radius: 3px;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: box-shadow 0.1s;
+    }
+
+    .stone-btn.plus {
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .stone-btn.minus {
+      background: transparent;
+      color: var(--ink);
+    }
+
+    .stone-btn.active {
+      box-shadow: 0 0 0 2.5px var(--paper), 0 0 0 4.5px var(--ink);
+    }
+
+    .stone-btn:disabled { opacity: 0.25; cursor: not-allowed; box-shadow: none; }
+
+    .stone-btn-sym { font-size: 17px; line-height: 1; }
+
+    .stone-btn-lbl { font-size: 10px; }
+
+    .stone-btn-n { font-size: 11px; opacity: 0.75; }
+
+    /* Disconnect banner */
+    #disconnect-banner {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      background: var(--ink);
+      color: var(--paper);
+      text-align: center;
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 6px;
+      z-index: 200;
+      display: none;
+    }
+
+    #disconnect-banner.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div id="disconnect-banner">[ RECONNECTING... ]</div>
+
+  <div id="game-wrap">
+
+    <!-- Top HUD -->
+    <div id="hud-top">
+      <div class="hud-logo">
+        <span class="stone-icon plus">+</span>
+        <span class="stone-icon minus">−</span>
+        <span class="hud-title">POLARITY</span>
+      </div>
+      <div class="hud-sep">·</div>
+      <div id="hud-round">ROUND 1</div>
+      <div style="flex:1"></div>
+      <div id="hud-timer">—</div>
+    </div>
+
+    <!-- Board canvas -->
+    <div id="canvas-wrap">
+      <canvas id="board-canvas"></canvas>
+
+      <!-- Round end overlay -->
+      <div id="round-overlay">
+        <div class="overlay-title">[ ROUND COMPLETE ]</div>
+        <div id="round-results"></div>
+        <button id="overlay-btn" class="btn btn-primary btn-sm"
+          style="width:auto;padding:11px 28px;display:none">
+          [ NEXT ROUND ]
+        </button>
+        <div id="overlay-sub">WAITING FOR HOST...</div>
+      </div>
+    </div>
+
+    <!-- Bottom HUD -->
+    <div id="hud-bottom">
+      <div id="player-strip"></div>
+      <div id="stone-selector">
+        <button class="stone-btn minus" id="btn-minus">
+          <span class="stone-btn-sym">−</span>
+          <span class="stone-btn-lbl">MINUS</span>
+          <span class="stone-btn-n" id="count-minus">5</span>
+        </button>
+        <button class="stone-btn plus active" id="btn-plus">
+          <span class="stone-btn-sym">+</span>
+          <span class="stone-btn-lbl">PLUS</span>
+          <span class="stone-btn-n" id="count-plus">50</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module" src="../js/game.js"></script>
+</body>
+</html>

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#F5F0E8">
+  <title>POLARITY — Magnetic Battle</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .landing-logo {
+      text-align: center;
+      padding: 48px 0 36px;
+    }
+
+    .landing-form {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .join-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .join-label {
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--border);
+      display: block;
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="screen">
+
+    <!-- Logo -->
+    <div class="landing-logo">
+      <div class="logo-stones">
+        <span class="stone-icon plus">+</span>
+        <span class="stone-icon minus">−</span>
+      </div>
+      <h1 class="logo-title">POLARITY</h1>
+      <p class="logo-tagline">Magnetic Battle v1.0</p>
+    </div>
+
+    <!-- Form -->
+    <div class="landing-form">
+
+      <!-- Name -->
+      <div class="field-group">
+        <label class="field-label" for="player-name">[ Your Name ]</label>
+        <input
+          type="text"
+          id="player-name"
+          class="field-input"
+          placeholder="Enter name"
+          maxlength="12"
+          autocomplete="off"
+          autocapitalize="characters"
+          spellcheck="false"
+        >
+      </div>
+
+      <!-- Create room -->
+      <button class="btn btn-primary gap-16" id="create-btn" style="margin-bottom:16px">
+        [ Create Room ]
+      </button>
+
+      <!-- Divider -->
+      <div class="or-divider">OR</div>
+
+      <!-- Join room -->
+      <div class="join-section">
+        <div>
+          <span class="join-label">[ Room Code ]</span>
+          <div class="code-input-tiles" id="code-tiles">
+            <input class="code-input-tile" maxlength="1" data-i="0" inputmode="text" autocomplete="off" spellcheck="false">
+            <input class="code-input-tile" maxlength="1" data-i="1" inputmode="text" autocomplete="off" spellcheck="false">
+            <input class="code-input-tile" maxlength="1" data-i="2" inputmode="text" autocomplete="off" spellcheck="false">
+            <input class="code-input-tile" maxlength="1" data-i="3" inputmode="text" autocomplete="off" spellcheck="false">
+          </div>
+        </div>
+        <button class="btn btn-outline" id="join-btn" disabled>
+          [ Join Room ]
+        </button>
+      </div>
+
+      <!-- Error -->
+      <p class="error-msg gap-12" id="error-msg" style="margin-top:14px"></p>
+
+    </div><!-- /landing-form -->
+
+  </div><!-- /screen -->
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module">
+    import {
+      getOrCreatePlayerId,
+      getPlayerName,
+      setPlayerName,
+      getPlayerAvatar,
+      generateRoomCode,
+      pickColor,
+      getParam,
+      showToast,
+    } from './js/main.js';
+    import {
+      createRoom,
+      joinRoom,
+      roomExists,
+      getUsedColors,
+    } from './js/firebase.js';
+
+    // ── Restore saved name ─────────────────────────────────────────────────
+    const nameInput = document.getElementById('player-name');
+    nameInput.value = getPlayerName();
+
+    // ── Code tile inputs ───────────────────────────────────────────────────
+    const tiles = [...document.querySelectorAll('.code-input-tile')];
+    const joinBtn = document.getElementById('join-btn');
+
+    function syncTiles() {
+      tiles.forEach(t => {
+        t.classList.toggle('filled', t.value.length > 0);
+      });
+      const code = tiles.map(t => t.value).join('');
+      joinBtn.disabled = code.length < 4;
+    }
+
+    tiles.forEach((tile, i) => {
+      tile.addEventListener('input', () => {
+        tile.value = tile.value.toUpperCase().replace(/[^A-Z]/g, '').slice(-1);
+        syncTiles();
+        if (tile.value && i < 3) tiles[i + 1].focus();
+      });
+
+      tile.addEventListener('keydown', e => {
+        if (e.key === 'Backspace') {
+          if (!tile.value && i > 0) {
+            tiles[i - 1].value = '';
+            tiles[i - 1].focus();
+          }
+          tile.value = '';
+          syncTiles();
+          e.preventDefault();
+        }
+        if (e.key === 'ArrowLeft'  && i > 0) tiles[i - 1].focus();
+        if (e.key === 'ArrowRight' && i < 3) tiles[i + 1].focus();
+      });
+
+      tile.addEventListener('paste', e => {
+        e.preventDefault();
+        const text = (e.clipboardData.getData('text') || '')
+          .toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+        [...text].forEach((ch, j) => {
+          if (tiles[i + j]) tiles[i + j].value = ch;
+        });
+        const last = Math.min(i + text.length, 3);
+        tiles[last].focus();
+        syncTiles();
+      });
+
+      tile.addEventListener('focus', () => {
+        tile.select();
+      });
+    });
+
+    // ── Auto-fill ?room=XXXX from share link ───────────────────────────────
+    const prefilledCode = getParam('room');
+    if (prefilledCode) {
+      const code = prefilledCode.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+      code.split('').forEach((ch, i) => { if (tiles[i]) tiles[i].value = ch; });
+      syncTiles();
+      nameInput.focus();
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.textContent = msg;
+      el.classList.add('visible');
+      setTimeout(() => el.classList.remove('visible'), 3500);
+    }
+
+    function getName() {
+      return nameInput.value.trim().toUpperCase();
+    }
+
+    function validateName() {
+      const name = getName();
+      if (!name) { showError('[ ENTER YOUR NAME ]'); nameInput.focus(); return false; }
+      setPlayerName(name);
+      return true;
+    }
+
+    // ── Create room ────────────────────────────────────────────────────────
+    document.getElementById('create-btn').addEventListener('click', async () => {
+      if (!validateName()) return;
+
+      const createBtn = document.getElementById('create-btn');
+      createBtn.disabled = true;
+      createBtn.textContent = '[ CREATING... ]';
+
+      try {
+        const playerId = getOrCreatePlayerId();
+        const color    = pickColor([]);
+        let code;
+        let attempts = 0;
+        do {
+          code = generateRoomCode();
+          attempts++;
+        } while (await roomExists(code) && attempts < 10);
+
+        await createRoom(code, {
+          id:     playerId,
+          name:   getName(),
+          avatar: getPlayerAvatar(),
+          color,
+        });
+
+        window.location.href = `screens/lobby.html?room=${code}`;
+      } catch (err) {
+        console.error(err);
+        showError('[ CONNECTION ERROR — CHECK FIREBASE CONFIG ]');
+        createBtn.disabled = false;
+        createBtn.textContent = '[ Create Room ]';
+      }
+    });
+
+    // ── Join room ──────────────────────────────────────────────────────────
+    document.getElementById('join-btn').addEventListener('click', async () => {
+      if (!validateName()) return;
+
+      const code = tiles.map(t => t.value).join('');
+      if (code.length < 4) { showError('[ ENTER 4-LETTER ROOM CODE ]'); return; }
+
+      joinBtn.disabled = true;
+      joinBtn.textContent = '[ JOINING... ]';
+
+      try {
+        const playerId    = getOrCreatePlayerId();
+        const usedColors  = await getUsedColors(code);
+        const color       = pickColor(usedColors);
+
+        await joinRoom(code, {
+          id:     playerId,
+          name:   getName(),
+          avatar: getPlayerAvatar(),
+          color,
+        });
+
+        window.location.href = `screens/lobby.html?room=${code}`;
+      } catch (err) {
+        showError(`[ ${err.message} ]`);
+        joinBtn.disabled = false;
+        joinBtn.textContent = '[ Join Room ]';
+        syncTiles();
+      }
+    });
+  </script>
+</body>
+</html>

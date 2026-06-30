@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#F5F0E8">
+  <title>POLARITY — Lobby</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    .lobby-header {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .lobby-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .room-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .leave-btn {
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--border);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      padding: 8px 0;
+    }
+
+    .leave-btn:active { opacity: 0.6; }
+
+    #player-list {
+      flex: 1;
+      min-height: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="screen">
+
+    <!-- Top bar: logo + leave -->
+    <div class="lobby-top gap-20">
+      <div class="logo-small">
+        <div class="logo-stones">
+          <span class="stone-icon plus">+</span>
+          <span class="stone-icon minus">−</span>
+        </div>
+        <span class="logo-title">POLARITY</span>
+      </div>
+      <button class="leave-btn" id="leave-btn">[ LEAVE ]</button>
+    </div>
+
+    <!-- Room code -->
+    <div class="room-section gap-20">
+      <span class="section-label">[ Room Code ]</span>
+      <div class="code-tiles" id="code-tiles"></div>
+    </div>
+
+    <!-- Player count -->
+    <div class="gap-12">
+      <span class="player-count" id="player-count">[ PLAYERS: — / 20 ]</span>
+    </div>
+
+    <!-- Player list -->
+    <div id="player-list" class="player-list gap-8">
+      <p class="loading-text">CONNECTING...</p>
+    </div>
+
+    <!-- Scroll hint -->
+    <div class="scroll-hint" id="scroll-hint" style="visibility:hidden">▼</div>
+
+    <!-- Edit hint (shown for own slot) -->
+    <p class="edit-hint">TAP YOUR SLOT TO CHANGE AVATAR</p>
+
+    <!-- Actions -->
+    <div class="lobby-actions">
+      <button class="btn btn-outline" id="share-btn">[ Share Room Code ]</button>
+      <button class="btn btn-primary" id="start-btn" style="display:none">[ Start Game ]</button>
+      <button class="btn btn-primary" id="ready-btn" style="display:none">[ Ready ]</button>
+      <button class="leave-btn" style="display:none"><!-- spacer --></button>
+    </div>
+
+  </div><!-- /screen -->
+
+  <!-- Avatar picker modal -->
+  <div class="modal-overlay" id="avatar-overlay">
+    <div class="modal-sheet">
+      <p class="modal-header">[ Select Avatar ]</p>
+      <div class="avatar-grid" id="avatar-grid"></div>
+      <br>
+      <button class="btn btn-outline" id="avatar-close">[ Done ]</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module" src="../js/lobby.js"></script>
+</body>
+</html>
