@@ -262,7 +262,7 @@ async function fillBotsIfNeeded() {
 
 async function shareRoom() {
   haptics.tap();
-  const url     = `https://ajakeo0.github.io/polarity/?room=${roomCode}`;
+  const url     = `https://ajakeoo.github.io/polarity/?room=${roomCode}`;
   const payload = {
     title: 'Polarity',
     text:  `Join my Polarity game!`,
