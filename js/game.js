@@ -9,6 +9,7 @@ import {
   initPhysics, destroyPhysics,
   addStone, removeStone,
   getStonePositions, findPlusStonesNear,
+  SNAP_RADIUS,
 } from './physics.js';
 import { getBotPlacement } from './bot.js';
 import { haptics } from './haptics.js';
@@ -19,10 +20,29 @@ const myId     = getOrCreatePlayerId();
 
 if (!roomCode) window.location.href = '../index.html';
 
-const SNAP_INDICATOR_MS  = 600;
+const RIPPLE_MS          = 400;  // white ripple burst duration on snap
 const STORM_SHRINK_STEP  = 0.12; // fraction removed from the storm radius each round
 const STORM_FLOOR        = 0.3;  // minimum playable storm radius — never reaches zero
 const MAX_HUD_PLAYERS    = 4;    // visible player cards in the floating HUD stack
+
+const HUD_TOP_CLEARANCE    = 64;  // px reserved for the top bar so the board doesn't sit under it
+const HUD_BOTTOM_CLEARANCE = 110; // px reserved for the bottom tray
+
+const MIN_ZOOM         = 0.5;
+const MAX_ZOOM         = 3;
+const DRAG_THRESHOLD   = 6;   // px of movement before a single-pointer touch counts as a pan
+const DOUBLE_TAP_MS    = 280; // window to detect a second tap
+const DOUBLE_TAP_DIST  = 30;  // px — how close the second tap must land
+
+const PLACEMENT_ANIM_MS = 150; // stone pop-in: scale 0 -> 1.1 -> 1.0
+const SNAP_VANISH_MS    = 80;  // snapped stone: scale to 1.4x then vanish
+const STORM_BURST_MS    = 250; // storm-culled stone: burst-fade out
+const FLOAT_TEXT_MS     = 700; // "+N" rising text duration
+const FLOAT_RISE_PX     = 40;
+const SHAKE_MS          = 150;
+const SHAKE_AMPLITUDE   = 3;   // px
+const STORM_FLASH_MS    = 300; // boundary flashes red on storm advance
+const BREATH_PERIOD_MS  = 3000; // storm boundary breathing cycle
 
 // ── DOM ───────────────────────────────────────────────────────────────────────
 const canvas         = document.getElementById('board-canvas');
@@ -46,22 +66,69 @@ let boardCY          = 0;
 let boardHalf        = 0;   // half the side length of the square board
 let roundActive      = false;
 let stormR           = 1.0;
+let prevStormR       = null;
 let timerInterval    = null;
 let lastRound        = 0;
 let localStones      = new Map();  // id -> { nx, ny, polarity, owner, placedAt, round }
 let snapLog          = new Map();  // dedupes incoming snap events
+let snapKindIds      = new Set();  // stone ids known to be dying via snap (vs. storm cull)
 let subscribedRounds = new Set();
-let snapIndicators   = [];         // { x, y, until }
+let ripples          = [];         // { x, y, until } — white snap ripple bursts
+let floatingTexts    = [];         // { x, y, text, startTime }
+let dyingStones      = [];         // { x, y, polarity, playerId, startTime, kind: 'snap'|'storm' }
+let shakeUntil       = 0;
+let stormFlashUntil  = 0;
 let _finishTriggered = false;
+
+// ── Zoom / pan ────────────────────────────────────────────────────────────────
+let zoom = 1;
+let panX = 0;
+let panY = 0;
+const activePointers = new Map(); // pointerId -> {x, y} in canvas-pixel space
+let pinchStartDist = 0;
+let pinchStartZoom = 1;
+let hadPinch       = false;
+let dragStart      = null; // { x, y, panX, panY }
+let dragging       = false;
+let tapState       = null; // { pos, timer }
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+function toCanvasCoords(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (clientX - rect.left) * (canvas.width  / rect.width),
+    y: (clientY - rect.top)  * (canvas.height / rect.height),
+  };
+}
+
+// Converts a screen tap into board/"world" space, inverting the current zoom+pan.
+function toWorldCoords(clientX, clientY) {
+  const p  = toCanvasCoords(clientX, clientY);
+  const cx = canvas.width  / 2;
+  const cy = canvas.height / 2;
+  return {
+    x: cx + (p.x - cx - panX) / zoom,
+    y: cy + (p.y - cy - panY) / zoom,
+  };
+}
 
 // ── Canvas ────────────────────────────────────────────────────────────────────
 function resizeCanvas() {
   canvas.width  = window.innerWidth;
   canvas.height = window.innerHeight;
-  boardCX   = canvas.width  / 2;
-  boardCY   = canvas.height / 2;
-  // Square board: side = the smaller viewport dimension, with a small inset
-  boardHalf = Math.min(canvas.width, canvas.height) / 2 * 0.96;
+
+  // Board fills the full available space between the top bar and bottom tray,
+  // not the whole viewport — otherwise the HUD would sit on top of it.
+  const availHeight = Math.max(100, canvas.height - HUD_TOP_CLEARANCE - HUD_BOTTOM_CLEARANCE);
+  boardCX   = canvas.width / 2;
+  boardCY   = HUD_TOP_CLEARANCE + availHeight / 2;
+  boardHalf = Math.min(canvas.width, availHeight) / 2 * 0.98;
+
+  zoom = 1;
+  panX = 0;
+  panY = 0;
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -73,7 +140,11 @@ function init() {
   initPhysics();
   requestAnimationFrame(drawLoop);
 
-  canvas.addEventListener('pointerdown', onBoardTap);
+  canvas.addEventListener('pointerdown',   onPointerDown);
+  canvas.addEventListener('pointermove',   onPointerMove);
+  canvas.addEventListener('pointerup',     onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerUp);
+
   btnPlus.addEventListener('click',  () => selectPol('+'));
   btnMinus.addEventListener('click', () => selectPol('-'));
   btnShop.addEventListener('click',  () => { window.location.href = `shop.html?room=${roomCode}`; });
@@ -85,6 +156,89 @@ function selectPol(p) {
   selectedPol = p;
   btnPlus.classList.toggle('active',  p === '+');
   btnMinus.classList.toggle('active', p === '-');
+}
+
+// ── Pointer / gesture handling (pinch zoom, drag pan, tap, double-tap) ────────
+function onPointerDown(e) {
+  canvas.setPointerCapture?.(e.pointerId);
+  activePointers.set(e.pointerId, toCanvasCoords(e.clientX, e.clientY));
+
+  if (activePointers.size === 2) {
+    hadPinch = true;
+    const pts = [...activePointers.values()];
+    pinchStartDist = dist(pts[0], pts[1]);
+    pinchStartZoom = zoom;
+    dragging = false;
+  } else if (activePointers.size === 1) {
+    dragStart = { x: e.clientX, y: e.clientY, panX, panY };
+    dragging  = false;
+  }
+}
+
+function onPointerMove(e) {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, toCanvasCoords(e.clientX, e.clientY));
+
+  if (activePointers.size === 2) {
+    hadPinch = true;
+    const pts = [...activePointers.values()];
+    const d = dist(pts[0], pts[1]);
+    const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, pinchStartZoom * (d / pinchStartDist)));
+    zoomAround(mid, newZoom);
+  } else if (activePointers.size === 1 && dragStart) {
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    if (!dragging && Math.hypot(dx, dy) > DRAG_THRESHOLD) dragging = true;
+    if (dragging && zoom > 1.02) {
+      panX = dragStart.panX + dx;
+      panY = dragStart.panY + dy;
+    }
+  }
+}
+
+function onPointerUp(e) {
+  const wasSinglePointer = activePointers.size === 1 && !hadPinch;
+  activePointers.delete(e.pointerId);
+
+  if (activePointers.size === 0) {
+    if (wasSinglePointer && !dragging) {
+      handleSingleTap(toWorldCoords(e.clientX, e.clientY));
+    }
+    dragStart = null;
+    dragging  = false;
+    hadPinch  = false;
+  }
+}
+
+// Keeps the board point under the pinch midpoint visually fixed as zoom changes.
+function zoomAround(screenPt, newZoom) {
+  const cx = canvas.width  / 2;
+  const cy = canvas.height / 2;
+  const wx = cx + (screenPt.x - cx - panX) / zoom;
+  const wy = cy + (screenPt.y - cy - panY) / zoom;
+  panX = (screenPt.x - cx) - newZoom * (wx - cx);
+  panY = (screenPt.y - cy) - newZoom * (wy - cy);
+  zoom = newZoom;
+}
+
+// Delays a tap briefly so a following second tap can cancel it and reset
+// zoom/pan instead — this is the only way to disambiguate a normal tap from
+// the first half of a double-tap.
+function handleSingleTap(pos) {
+  if (tapState && dist(pos, tapState.pos) < DOUBLE_TAP_DIST) {
+    clearTimeout(tapState.timer);
+    tapState = null;
+    zoom = 1;
+    panX = 0;
+    panY = 0;
+    return;
+  }
+  const timer = setTimeout(() => {
+    tapState = null;
+    onBoardTap(pos);
+  }, DOUBLE_TAP_MS);
+  tapState = { pos, timer };
 }
 
 // ── Room updates ──────────────────────────────────────────────────────────────
@@ -101,7 +255,13 @@ function onRoomUpdate(r) {
   }
 
   hudRound.textContent = `RND ${r.round ?? 1}`;
-  stormR = r.stormRadius ?? 1.0;
+
+  const newStormR = r.stormRadius ?? 1.0;
+  if (prevStormR !== null && newStormR !== prevStormR) {
+    stormFlashUntil = Date.now() + STORM_FLASH_MS;
+  }
+  prevStormR = newStormR;
+  stormR = newStormR;
 
   const plus  = me.plusStones  ?? 0;
   const minus = me.minusStones ?? 0;
@@ -155,7 +315,8 @@ function startNewRound(round, duration) {
   }
 }
 
-// Host-only silent timer — advances the storm when the round expires. No UI is shown.
+// Host-only silent timer — advances the storm when the round expires. No UI is shown;
+// the breathing/flash on the storm boundary itself is the only hint.
 function startHostTimer(seconds) {
   const endAt = Date.now() + seconds * 1000;
   timerInterval = setInterval(() => {
@@ -224,14 +385,11 @@ async function _placeBotStone(bot, round) {
 }
 
 // ── Stone placement ───────────────────────────────────────────────────────────
-async function onBoardTap(e) {
+async function onBoardTap(pos) {
   if (!roundActive || !me || !room) return;
 
-  const rect = canvas.getBoundingClientRect();
-  const px = (e.clientX - rect.left) * (canvas.width  / rect.width);
-  const py = (e.clientY - rect.top)  * (canvas.height / rect.height);
-  const dx = px - boardCX;
-  const dy = py - boardCY;
+  const dx = pos.x - boardCX;
+  const dy = pos.y - boardCY;
 
   // Must be within storm-safe square zone
   const stormHalf = boardHalf * stormR - 16;
@@ -282,7 +440,7 @@ async function resolveSnapPenalty(placerId, currentRound, touchedIds, nx, ny) {
   }
 
   await recordSnapEvent(roomCode, currentRound, {
-    placerId, count: touchedIds.length, nx, ny, at: Date.now(),
+    placerId, count: touchedIds.length, stoneIds: touchedIds, nx, ny, at: Date.now(),
   });
 
   for (const [round, ids] of byRound) {
@@ -303,8 +461,24 @@ function onStoneReceived(id, stone, round) {
   });
 }
 
+// Fires for every stone removal (snap penalty or storm cull). Whichever of
+// this or onSnapReceived observes the stone first captures its snapshot and
+// starts the dying-animation; the other becomes a no-op via the localStones
+// guard, so the kind (snap vs. storm burst-fade) is correct either way.
 function onStoneRemoved(id) {
   if (!localStones.has(id)) return;
+
+  const positions = getStonePositions();
+  const snapshot  = positions.find(p => p.id === id);
+  if (snapshot) {
+    dyingStones.push({
+      x: snapshot.x, y: snapshot.y, polarity: snapshot.polarity, playerId: snapshot.playerId,
+      startTime: Date.now(),
+      kind: snapKindIds.has(id) ? 'snap' : 'storm',
+    });
+  }
+  snapKindIds.delete(id);
+
   removeStone(id);
   localStones.delete(id);
 }
@@ -312,11 +486,15 @@ function onStoneRemoved(id) {
 function onSnapReceived(id, snap) {
   if (snapLog.has(id)) return;
   snapLog.set(id, snap);
-  snapIndicators.push({
-    x: boardCX + snap.nx * boardHalf,
-    y: boardCY + snap.ny * boardHalf,
-    until: Date.now() + SNAP_INDICATOR_MS,
-  });
+
+  for (const stoneId of snap.stoneIds ?? []) snapKindIds.add(stoneId);
+
+  const px = boardCX + snap.nx * boardHalf;
+  const py = boardCY + snap.ny * boardHalf;
+
+  ripples.push({ x: px, y: py, until: Date.now() + RIPPLE_MS });
+  floatingTexts.push({ x: px, y: py, text: `+${snap.count}`, startTime: Date.now() });
+  shakeUntil = Date.now() + SHAKE_MS;
 }
 
 // ── Floating HUD: player stack (top right) ────────────────────────────────────
@@ -362,28 +540,41 @@ function drawLoop() {
 function draw() {
   const W = canvas.width;
   const H = canvas.height;
+  const now = Date.now();
 
-  // Full-bleed cream board — the board surface never changes or gets erased.
+  // Full-bleed cream background behind everything, including outside the board band.
   ctx.fillStyle = '#F5F0E8';
   ctx.fillRect(0, 0, W, H);
 
-  drawDotGrid();
-
-  // Storm boundary — only this dashed rect moves inward as the storm advances.
-  const sh = boardHalf * stormR;
   ctx.save();
-  ctx.strokeStyle = '#1C1208';
-  ctx.lineWidth   = 2;
-  ctx.setLineDash([9, 5]);
-  ctx.strokeRect(boardCX - sh, boardCY - sh, sh * 2, sh * 2);
-  ctx.restore();
 
-  // Stones (outside-storm stones drawn at 30% opacity, non-interactive)
-  for (const stone of getStonePositions()) {
+  // Screen shake — a few px of jitter on top of the zoom/pan transform.
+  if (now < shakeUntil) {
+    ctx.translate((Math.random() * 2 - 1) * SHAKE_AMPLITUDE, (Math.random() * 2 - 1) * SHAKE_AMPLITUDE);
+  }
+
+  // Zoom/pan view transform — board content only; HUD chips are separate DOM
+  // elements and are unaffected.
+  ctx.translate(W / 2 + panX, H / 2 + panY);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-W / 2, -H / 2);
+
+  drawDotGrid();
+  drawStormBoundary(now);
+
+  const stones = getStonePositions();
+  for (const stone of stones) {
+    if (stone.polarity === '+') drawDangerRadius(stone);
+  }
+  for (const stone of stones) {
     drawStone(stone);
   }
 
-  drawSnapIndicators();
+  drawDyingStones(now);
+  drawRipples(now);
+  drawFloatingTexts(now);
+
+  ctx.restore();
 }
 
 function drawDotGrid() {
@@ -400,7 +591,47 @@ function drawDotGrid() {
   }
 }
 
-function drawStone({ x, y, polarity, playerId }) {
+// Storm boundary breathes (opacity 0.3 <-> 0.8, 3s loop) as the only ambient
+// hint that the storm is live. On advance it flashes bright red for 300ms —
+// still no numeric countdown anywhere.
+function drawStormBoundary(now) {
+  const sh = boardHalf * stormR;
+  ctx.save();
+  if (now < stormFlashUntil) {
+    ctx.strokeStyle = '#E63946';
+    ctx.globalAlpha = 1;
+  } else {
+    ctx.strokeStyle = '#1C1208';
+    ctx.globalAlpha = 0.55 + 0.25 * Math.sin((now / BREATH_PERIOD_MS) * Math.PI * 2);
+  }
+  ctx.lineWidth = 2;
+  ctx.setLineDash([9, 5]);
+  ctx.strokeRect(boardCX - sh, boardCY - sh, sh * 2, sh * 2);
+  ctx.restore();
+}
+
+// Faint dashed ring showing a live + stone's snap radius — 1980s selection-ring
+// styling, not a glow. Naturally disappears once the stone snaps, since it's
+// only drawn for stones currently returned by getStonePositions().
+function drawDangerRadius({ x, y }) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(28,18,8,0.1)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.arc(x, y, SNAP_RADIUS, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function placementScale(placedAt) {
+  const elapsed = Date.now() - (placedAt || 0);
+  if (elapsed < 0 || elapsed >= PLACEMENT_ANIM_MS) return 1;
+  const t = elapsed / PLACEMENT_ANIM_MS;
+  return t < 0.66 ? lerp(0, 1.1, t / 0.66) : lerp(1.1, 1.0, (t - 0.66) / 0.34);
+}
+
+function drawStone({ x, y, polarity, playerId, placedAt }) {
   const p     = room?.players?.[playerId];
   const color = p?.color ?? '#1C1208';
   const r     = 12;
@@ -410,17 +641,20 @@ function drawStone({ x, y, polarity, playerId }) {
   const dy           = y - boardCY;
   const sh           = boardHalf * stormR;
   const outsideStorm = Math.abs(dx) > sh || Math.abs(dy) > sh;
+  const scale         = placementScale(placedAt);
 
   ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
   if (outsideStorm) ctx.globalAlpha = 0.3;
   if (polarity === '+') {
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fillStyle = '#1C1208';
     ctx.fill();
 
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.strokeStyle = color;
     ctx.lineWidth   = 2.5;
     ctx.stroke();
@@ -429,21 +663,21 @@ function drawStone({ x, y, polarity, playerId }) {
     ctx.font         = 'bold 13px "Space Mono", monospace';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('+', x, y + 0.5);
+    ctx.fillText('+', 0, 0.5);
   } else {
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fillStyle = '#F5F0E8';
     ctx.fill();
 
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.strokeStyle = '#1C1208';
     ctx.lineWidth   = 2;
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.arc(x, y, r - 4, 0, Math.PI * 2);
+    ctx.arc(0, 0, r - 4, 0, Math.PI * 2);
     ctx.strokeStyle = color;
     ctx.lineWidth   = 2;
     ctx.stroke();
@@ -452,28 +686,70 @@ function drawStone({ x, y, polarity, playerId }) {
     ctx.font         = 'bold 13px "Space Mono", monospace';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('−', x, y + 0.5);
+    ctx.fillText('−', 0, 0.5);
   }
   ctx.restore();
 }
 
-function drawSnapIndicators() {
-  const now = Date.now();
-  snapIndicators = snapIndicators.filter(ind => ind.until > now);
-  for (const ind of snapIndicators) {
-    const remaining = (ind.until - now) / SNAP_INDICATOR_MS; // 1 -> 0
+// Snapped stones scale to 1.4x and vanish over 80ms; storm-culled stones
+// burst slightly and fade over 250ms.
+function drawDyingStones(now) {
+  dyingStones = dyingStones.filter(d => now - d.startTime < (d.kind === 'snap' ? SNAP_VANISH_MS : STORM_BURST_MS));
+  for (const d of dyingStones) {
+    const dur   = d.kind === 'snap' ? SNAP_VANISH_MS : STORM_BURST_MS;
+    const t     = (now - d.startTime) / dur;
+    const scale = d.kind === 'snap' ? lerp(1, 1.4, t) : lerp(1, 1.3, t);
+    const color = room?.players?.[d.playerId]?.color ?? '#1C1208';
+
     ctx.save();
-    ctx.globalAlpha = remaining;
-    ctx.strokeStyle = '#1C1208';
-    ctx.lineWidth   = 3;
+    ctx.globalAlpha = 1 - t;
+    ctx.translate(d.x, d.y);
+    ctx.scale(scale, scale);
     ctx.beginPath();
-    ctx.arc(ind.x, ind.y, 14 + (1 - remaining) * 26, 0, Math.PI * 2);
+    ctx.arc(0, 0, 12, 0, Math.PI * 2);
+    ctx.fillStyle = d.polarity === '+' ? '#1C1208' : '#F5F0E8';
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 2.5;
     ctx.stroke();
     ctx.restore();
   }
 }
 
-// ── Minimap ────────────────────────────────────────────────────────────────────
+// White ripple burst at the snap coordinates.
+function drawRipples(now) {
+  ripples = ripples.filter(rp => rp.until > now);
+  for (const rp of ripples) {
+    const remaining = (rp.until - now) / RIPPLE_MS; // 1 -> 0
+    ctx.save();
+    ctx.globalAlpha = remaining * 0.9;
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth   = 3;
+    ctx.beginPath();
+    ctx.arc(rp.x, rp.y, 10 + (1 - remaining) * 60, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// Floating "+N" text rising from the snap point.
+function drawFloatingTexts(now) {
+  floatingTexts = floatingTexts.filter(f => now - f.startTime < FLOAT_TEXT_MS);
+  for (const f of floatingTexts) {
+    const t     = (now - f.startTime) / FLOAT_TEXT_MS;
+    const y     = f.y - t * FLOAT_RISE_PX;
+    ctx.save();
+    ctx.globalAlpha = 1 - t;
+    ctx.fillStyle   = '#1C1208';
+    ctx.font        = 'bold 16px "Space Mono", monospace';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(f.text, f.x, y);
+    ctx.restore();
+  }
+}
+
+// ── Minimap (unaffected by board zoom/pan — always shows the full overview) ──
 function drawMinimap() {
   const W = minimapCanvas.width;
   const H = minimapCanvas.height;

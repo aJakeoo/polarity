@@ -55,8 +55,8 @@ export function removeStone(id) {
 
 export function getStonePositions() {
   const out = [];
-  for (const [id, { body, polarity, playerId }] of _stones) {
-    out.push({ id, x: body.position.x, y: body.position.y, polarity, playerId });
+  for (const [id, { body, polarity, playerId, placedAt }] of _stones) {
+    out.push({ id, x: body.position.x, y: body.position.y, polarity, playerId, placedAt });
   }
   return out;
 }

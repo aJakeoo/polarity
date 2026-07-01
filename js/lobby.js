@@ -16,6 +16,8 @@ import {
   startGame,
   removePlayer,
   addBotToRoom,
+  armDisconnectCleanup,
+  cancelDisconnectCleanup,
 } from './firebase.js';
 import { createBot } from './bot.js';
 import { haptics } from './haptics.js';
@@ -41,6 +43,11 @@ function init() {
   setupAvatarPicker();
   setupActions();
 
+  // Arm disconnect cleanup here, on the stable lobby connection — NOT on the
+  // transient connecting.html page (see the note in firebase.js's joinRoom).
+  // Covers the host too, who previously had no cleanup armed at all.
+  armDisconnectCleanup(roomCode, myId);
+
   unsubscribe = subscribeToRoom(roomCode, onRoomUpdate);
 }
 
@@ -64,9 +71,14 @@ function onRoomUpdate(room) {
     return;
   }
 
-  // Redirect when game starts
+  // Redirect when game starts. Cancel the lobby's disconnect cleanup first —
+  // this navigation tears down the connection that armed it, and we don't
+  // want that to delete the player right as the match begins. The cancel
+  // must actually reach the server before we navigate, so it's awaited.
   if (room.status === 'playing') {
-    window.location.href = `game.html?room=${roomCode}`;
+    cancelDisconnectCleanup(roomCode, myId).finally(() => {
+      window.location.href = `game.html?room=${roomCode}`;
+    });
     return;
   }
 

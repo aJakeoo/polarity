@@ -20,6 +20,7 @@ const STARTING_PLUS_STONES  = 50;
 const STARTING_MINUS_STONES = 5;
 const STARTING_FLUX         = 500;
 const DEFAULT_TIMER_SECONDS = 20;
+const STARTING_STORM_RADIUS = 0.95; // board fills the full screen; storm starts just inside the edge
 
 // ── Firebase config ──────────────────────────────────────────────────────────
 // Fill in your project values from the Firebase console.
@@ -50,7 +51,7 @@ export async function createRoom(code, hostPlayer) {
     host:          hostPlayer.id,
     status:        'lobby',
     round:         0,
-    stormRadius:   1.0,
+    stormRadius:   STARTING_STORM_RADIUS,
     timerDuration: DEFAULT_TIMER_SECONDS,
     createdAt:     serverTimestamp(),
     players: {
@@ -93,8 +94,31 @@ export async function joinRoom(code, player) {
     joinedAt:    serverTimestamp(),
   });
 
-  // Remove player if they disconnect
+  // NOTE: disconnect cleanup is intentionally NOT armed here. This function
+  // runs on the transient connecting.html page, which navigates away to the
+  // lobby immediately after — that page-unload tears down this connection
+  // and would fire the cleanup instantly, deleting the player we just wrote.
+  // Cleanup is armed once the player settles on a stable page instead — see
+  // armDisconnectCleanup(), called from lobby.js.
+}
+
+// Arms "remove this player if they disconnect." Call this from a page the
+// player is expected to stay on for a while (the lobby), not from a
+// transient page that navigates away immediately (connecting.html) — see
+// the note in joinRoom() above for why that ordering matters.
+export function armDisconnectCleanup(code, playerId) {
+  const playerRef = ref(db, `rooms/${code}/players/${playerId}`);
   onDisconnect(playerRef).remove();
+}
+
+// Cancels a previously-armed disconnect cleanup. This messages the Firebase
+// server and must be awaited — callers navigating away right after this
+// (e.g. lobby -> game when the match starts) need the cancel to actually
+// reach the server before the page-unload tears down the connection,
+// otherwise the stale disconnect action still fires and deletes the player.
+export async function cancelDisconnectCleanup(code, playerId) {
+  const playerRef = ref(db, `rooms/${code}/players/${playerId}`);
+  await onDisconnect(playerRef).cancel();
 }
 
 export async function setReady(code, playerId, isReady) {
@@ -175,6 +199,7 @@ export async function recordSnapEvent(code, round, snap) {
   await set(snapRef, {
     placerId: snap.placerId,
     count:    snap.count,
+    stoneIds: snap.stoneIds ?? [],
     nx:       snap.nx,
     ny:       snap.ny,
     at:       snap.at,
@@ -224,7 +249,7 @@ export async function resetToLobby(code, playerIds) {
   const updates = {
     [`rooms/${code}/status`]:      'lobby',
     [`rooms/${code}/round`]:       0,
-    [`rooms/${code}/stormRadius`]: 1.0,
+    [`rooms/${code}/stormRadius`]: STARTING_STORM_RADIUS,
     [`rooms/${code}/winner`]:      null,
     [`rooms/${code}/finishedAt`]:  null,
   };
