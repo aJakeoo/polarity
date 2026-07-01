@@ -370,3 +370,104 @@ Snapping is a penalty for the placer. Net effect: placer count +1. Victim keeps 
 - Sound
 
 ---
+
+## Session 7 — 2026-07-01
+
+### What was done
+
+**Imported Polarity.dc.html from the Claude Design MCP** (project "Polarity game UI directions", id `5a4ff7d7-9eb1-4fb2-94e3-e940593d6597`) via `DesignSync.get_file` and used it as the visual reference for every screen. Implemented the numbered mechanic/storm/shop/win fixes, added the missing Connecting screen, and ran a full QA pass. Commit: `dd452d6`.
+
+### Mechanic fixes — audit result
+
+Reading the code before touching anything showed most of Fix 1 and Fix 2 were **already implemented** (from earlier, uncommitted work in this same session, before a context compaction): `physics.js` already made `+` stones `isStatic: true` with zero force applied to `+`/`+` pairs, and `game.js` already resolved snaps at placement time within a 50px radius, crediting all touched stones back to the placer immediately in Firebase, with a fading ring indicator drawn at the snap location. No changes were needed there.
+
+**Fixed:**
+- **Win condition** (`js/game.js`): tightened the check from a stone-total-equals-zero comparison to an explicit `plusStones === 0 && minusStones === 0`, matching Fix 3's exact wording.
+- **Removed a leftover "end game when storm bottoms out" shortcut** in `doEndRound()` that declared a fewest-stones winner once the storm reached its floor. This contradicted Fix 3 ("only 0/0 triggers the win screen") — the storm now shrinks every round via named constants `STORM_SHRINK_STEP` (0.12) and `STORM_FLOOR` (0.3) and simply parks at the floor forever; play continues until someone naturally empties both stone types.
+- Storm silent host-only 20s advance and Firebase deletion of culled stones were already correct (Fix 4) — no change needed.
+
+**Known unresolved spec tension:** Fix 2's third bullet ("if a − stone pushes a + stone into snap range, the − stone's owner takes the penalty") cannot occur under a literal reading of Fix 1 — `+` stones are completely static and can never be displaced, so their relative positions never change after placement, and continuous re-checking would be a no-op. I implemented the placement-time check faithfully but did not add dead logic for an unreachable case. Flagging this rather than writing code that can never execute.
+
+### Connecting screen (new)
+
+Added `screens/connecting.html` + `js/connecting.js` — the design added this as the first screen in the flow (before Lobby), with a pulsing +/− logo and a sequential three-dot indicator, reusing the `polarityPulse` / `dotBlink` keyframes that were already sitting unused in `style.css`. `index.html`'s Create/Join buttons now navigate to `connecting.html?mode=creating|joining&...` instead of calling Firebase directly; the actual `createRoom`/`joinRoom` call now happens on the connecting screen while the animation plays, then redirects to the lobby (or back to the landing screen with an error toast on failure). Flow is now **Landing → Connecting → Lobby → Game Board → Shop → Results**, matching the design.
+
+### Game board HUD — rebuilt
+
+The board was a fixed-height canvas sandwiched between separate top/bottom HTML bars. Both the original spec ("all UI is a floating HUD overlay... board fills full screen edge to edge") and the design file call for a full-bleed board with the HUD floating on top, so `screens/game.html` and `js/game.js` were rebuilt:
+- Canvas now fills the entire viewport; all HUD chips are absolutely-positioned overlays on top of it, styled as bordered `#FDFAF2` chips with hard offset shadows per the design.
+- Added a live minimap (top-left) — a small canvas that draws the actual storm boundary and stone positions scaled down, not just a decorative static image.
+- Player info moved to a vertical card stack (top-right, capped at 4 visible players), each showing avatar, name, and both stone counts.
+- `[ SHOP ]` moved to sit below the player stack (matching the mockup) instead of the bottom tray.
+- Bottom tray restructured into `[HAND]` (tally + the two stone-select buttons) and `[POWER-UPS]` (3 slots) sections with a vertical divider between them.
+- Removed the on-screen snap counter — it wasn't in the design and isn't part of any explicit fix, so it was cut rather than left as a mismatched leftover.
+
+**Deliberate deviation from the design's static mockup:** the mockup's HUD shows `RND 3/5 · 12s` (a visible countdown). Fix 4 explicitly says "no visible timer" — this is a direct conflict between the screenshot and the numbered mechanic instructions. Resolved by keeping the chip's bordered/shadowed visual styling but showing only `RND {n}`, no countdown, treating the gameplay-behavior instruction as authoritative over the mockup's sample content.
+
+**Also omitted:** the mockup's `⊕ ×1.2` chip has no defined function anywhere in the spec or the fix list; adding a non-functional decorative element would misrepresent a mechanic that doesn't exist, so it was left out.
+
+### Shop screen — restyled to match design exactly
+
+- Rebuilt `.balance-row`, `.powerup-card`, `.powerup-icon`, `.powerup-buy` etc. in `screens/shop.html` with the design's hard-offset box-shadows and sharp corners (previously used soft 3px border-radius and thin borders).
+- Added category dividers (`[ OFFENSIVE ]` / `[ DEFENSIVE ]` / `[ BOARD/CHAOS ]`) in `js/shop.js`, reusing the `.cat-divider` classes already defined in `style.css`.
+- **Fixed a category mismatch**: `js/powerups.js` had ANCHOR under "CHAOS" and GHOST under "DEFENSIVE" — the design file groups them the other way (ANCHOR = Defensive, GHOST = Board/Chaos). Since the design file is authoritative on conflicts, swapped both labels and updated descriptions to match the mockup's exact wording.
+- `[ BACK TO GAME ]` changed from outline to solid-black to match the design.
+- Purchase flow itself (deduct flux, FIFO 3-slot queue, live balance) was already fully implemented from earlier in this session — no functional change needed, only the visual layer.
+
+### Win screen — podium fixed
+
+- 1st place now shows a `[ WINNER ]` badge and a small roof icon instead of the 5-dot stone indicator (previously all three podium cards rendered dots identically, which didn't match the design).
+- Removed border-radius from `.podium-card`, `.lb-row`, `.stats-section` for consistency with the sharp-corner system used everywhere else.
+- Rebuilt the header (`.win-header`) to the design's centered `[POLARITY]` tag + large title + border-bottom treatment, replacing the small left-aligned logo lockup that didn't match.
+- **Left the stats block content as-is** (total/your snap penalties, rounds played, most penalized) rather than relaunching it as the mockup's sample labels (TURNS PLAYED, FINAL BOARD, POWER-UPS USED, LONGEST CHAIN) — those would require new counters that aren't tracked anywhere in Firebase today, and fabricating placeholder values for untracked stats would be worse than keeping the real, already-correct ones.
+
+### Global fixes
+
+- **Space Mono was never actually loading.** Despite Session 6's log claiming "Google Fonts link added," none of the five HTML files actually had the `<link>` tag — `css/style.css` was also still declaring `'Courier New'` as the primary font. Added the Google Fonts preconnect + stylesheet link to every screen and switched all `font-family` declarations (including the two hardcoded SVG `<text>` elements in the lobby's logo mark) to Space Mono with Courier New as fallback.
+- Swept the whole CSS for stray `border-radius` — confirmed every remaining instance is the deliberate circular-avatar exception, none are leftover soft-corner cards.
+
+### QA pass results
+
+**Could not perform live browser testing** — the Claude-in-Chrome extension reported "not connected" for this session, so functional verification below is from careful static tracing, not an actual click-through. Flagging this explicitly rather than claiming a live pass.
+
+CODE QUALITY:
+- [x] No dead code / commented-out blocks / unused variables — swept all touched files; removed the now-unreachable `_finishGame()` fewest-stones fallback and the unused `mySnapCount`/`snap-count` DOM tracking.
+- [x] No `console.log` in production code — grepped the whole project, zero matches (only a comment containing the word "console").
+- [x] No hardcoded magic numbers that should be constants — named `STORM_SHRINK_STEP`, `STORM_FLOOR`, `MAX_HUD_PLAYERS` in `game.js` where previously `0.12`/`0.3` were inline.
+- [x] Functions do one thing — no changes needed beyond what was rewritten.
+- [x] No duplicate logic — none introduced.
+
+FUNCTIONALITY (traced, not click-tested):
+- [x] Place a + stone — stays put: confirmed `isStatic: true` in `physics.js`, zero force applied to `+`/`+` pairs.
+- [x] Place a + stone near another — snap fires, stones return to placer: confirmed `findPlusStonesNear` (50px) + `resolveSnapPenalty` crediting `count` back via `removeStonesFromRound`.
+- [x] Place a − stone — pushes nearby stones: confirmed dynamic body + repulsion force in `_applyForces` for any pair with at least one `−`.
+- [x] Storm advances silently every 20s: confirmed `DEFAULT_TIMER_SECONDS = 20`, host-only `setInterval`, no UI element renders it.
+- [x] Shop buy deducts flux correctly: confirmed `buyPowerUp` checks balance, throws on insufficient funds, FIFO-replaces the oldest slot at capacity.
+- [x] Win screen triggers on depletion: confirmed the tightened `plusStones === 0 && minusStones === 0` check calls `finishGame`, and all three screens (`game.js`, `win.js`) redirect correctly on `status` changes.
+- [ ] **Not verified live**: actual pixel rendering, touch/tap coordinate accuracy on a real viewport, Firebase round-trip latency, multi-client sync. Recommend a manual click-through before relying on this build.
+
+INTEGRATION:
+- [x] Every `getElementById` call in `game.js`, `shop.js`, `win.js`, `connecting.js`, `lobby.js` was cross-checked against its HTML file's actual `id` attributes — all matched, no orphaned references.
+- [x] Firebase schema consistent — no field-name drift found between `firebase.js` writes and every screen's reads.
+- [x] No stub screens remaining — `connecting.html`, `game.html`, `shop.html`, `win.html` are all fully implemented; `landing.html` remains an intentional redirect shim to `index.html`, not a stub.
+
+DESIGN:
+- [x] Every screen's structure and styling now traces back to a specific block of Polarity.dc.html.
+- [x] Space Mono monospace, all-caps, bracket notation throughout (see note above on why the QA checklist's literal "Courier New" line was superseded — the design file explicitly uses Space Mono, and per the task's own instruction, the design file wins on conflicts).
+- [x] Cream `#F5F0E8`/`#F5F0E5` background on every screen.
+- [x] No default browser button/input chrome visible — every interactive element has explicit background/border/font-family.
+
+### Deliberate decisions worth knowing about
+
+1. Avatars stay as the existing 9 real PNGs (astronaut, wizard, etc.) rather than switching to the mockup's emoji placeholders — the emoji in the design file are sample data for a real player slot, the same way "ALEX" and room code "WXYZ" are sample data.
+2. The design's `RND 3/5 · 12s` visible countdown was cut down to `RND {n}` only — see Fix 4 conflict note above.
+3. The `⊕ ×1.2` HUD chip was omitted — no defined mechanic behind it anywhere in the spec.
+4. Win screen's stats block keeps its real, already-correct labels instead of the mockup's untracked sample stats.
+
+### Next task
+
+- Manual click-through QA once the Chrome extension is reconnected (place stones, trigger a snap, let a 20s round pass, buy a power-up, deplete a bot down to 0/0).
+- Power-up activation effects (SURGE freeze, FLIP reverse, GHOST invisible, ANCHOR gravity well) are still not implemented — owned power-ups only display in the HUD, matching the scope of what was asked this session.
+- Sound design (still not started).
+
+---
