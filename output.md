@@ -471,3 +471,110 @@ DESIGN:
 - Sound design (still not started).
 
 ---
+
+## Session 8 — 2026-07-01
+
+### What was done
+
+**Feel and juice pass** — snap VFX, danger radius rings, stone placement animation, storm breathing pulse, pinch-zoom/pan, board resizing, a more prominent shop button, and a real fix for the join-room bug. Commit: `4e8c801`.
+
+### Join Room — root cause found and fixed
+
+Before touching anything else, traced the actual bug rather than guessing at symptoms. Root cause: `joinRoom()` in `firebase.js` called `onDisconnect(playerRef).remove()` immediately after writing the joining player's data — but that function runs on the **transient** `connecting.html` page, which navigates to `lobby.html` immediately afterward. That navigation tears down the connection that had just armed the disconnect handler, and the Firebase server fires the queued removal essentially instantly — deleting the just-joined player before the lobby even finishes loading. The host had the opposite problem: `createRoom()` never armed disconnect cleanup at all, so a host who closed their tab mid-lobby stayed listed forever.
+
+**Fix (`js/firebase.js`, `js/lobby.js`):**
+- Removed the premature `onDisconnect(...).remove()` call from `joinRoom()`.
+- Added `armDisconnectCleanup(code, playerId)` — arms the removal-on-disconnect. Called once from `lobby.js`'s `init()`, on the **stable** lobby connection, for both host and joiner alike (the host is now covered too).
+- Added `cancelDisconnectCleanup(code, playerId)` — cancels the pending removal. Called from `lobby.js` right before redirecting to `game.html` when the match starts, so that navigation doesn't delete the player either. This had to be `async`/awaited: cancelling messages the Firebase server, and firing `window.location.href` before that message lands would reproduce the exact same race — the fix uses `cancelDisconnectCleanup(...).finally(() => navigate)`.
+- Disconnect cleanup is deliberately **not** armed anywhere in `game.js`, `shop.js`, or `win.js` — those pages are reached via in-match navigation (e.g. game → shop → game), and arming removal-on-disconnect there would delete a player's data just for checking the shop mid-match.
+
+**Could not live-test with two browser sessions as asked** — the Claude-in-Chrome extension reported "not connected" on retry. Verified via careful tracing of the actual write/navigate/disconnect sequence instead. **Worth knowing**: testing with two tabs in the *same* browser profile won't exercise this properly — `getOrCreatePlayerId()` reads/writes a single `localStorage` key, so two tabs in one profile share one player identity. Use two different profiles, or a regular window + an incognito window, to get two distinct players.
+
+Auto-fill from `?room=` was already implemented in `index.html` from a prior session and needed no changes — confirmed it still reads the query param, uppercases/sanitizes it, and pre-fills the four join-code tiles.
+
+### Snap VFX (`js/game.js`)
+
+- Snapped stones scale to 1.4x and fade out over 80ms (`drawDyingStones`, kind `'snap'`).
+- White ripple burst at the snap coordinates (`drawRipples` — reused/recolored the prior red snap-indicator mechanism).
+- Floating `+N` text rises 40px and fades over 700ms from the snap point (`drawFloatingTexts`).
+- Screen shake: ±3px jitter for 150ms, applied as a canvas translate before the zoom/pan transform each frame (`shakeUntil`).
+- Haptics `[30, 10, 30]` — this was already `haptics.snap()`'s exact pattern from an earlier session; confirmed unchanged and still only fires for the placer (not every viewer), which is correct — only your own device should buzz for your own action.
+
+**A genuine race worth flagging:** a snap simultaneously (a) writes a `snaps/{id}` event and (b) deletes the touched stones from `rounds/{round}/stones/{id}`. Both are separate Firebase writes a client learns about via two separate listeners (`subscribeToSnaps` / `subscribeToStoneRemovals`), and delivery order between them isn't guaranteed. To make the *visual result* correct regardless of order: `onSnapReceived` marks the event's `stoneIds` in a `snapKindIds` Set as soon as it arrives; `onStoneRemoved` checks that Set to decide whether a given removal gets the snap-vanish animation or the storm-burst-fade animation, and works correctly whichever of the two listeners fires first. Added a `stoneIds` field to the snap event schema in Firebase (`recordSnapEvent`) to make this possible — previously the event only carried a count and a location, not which specific stones were involved.
+
+### Danger radius (`js/game.js`)
+
+Every live `+` stone draws a faint dashed ring at its actual 50px snap radius (`SNAP_RADIUS`, imported from `physics.js`) — 1px dashed, ink at 10% opacity. Deliberately plain (no glow, no animation) to match the "old Mac selection ring" reference rather than a modern effect. Disappears automatically once a stone snaps, since the ring is only drawn for stones `getStonePositions()` still returns — no extra bookkeeping needed.
+
+### Stone placement animation (`js/game.js`)
+
+`drawStone` now computes a scale factor from `Date.now() - placedAt` (0 → 1.1 → 1.0 over 150ms, piecewise-lerp bounce) and applies it as a local canvas transform before drawing the stone's shapes. `placedAt` had to be threaded through `physics.js`'s `getStonePositions()`, which previously only returned position/polarity/owner. The short tap haptic (`navigator.vibrate(10)`) was already `haptics.tap()` from an earlier session and needed no change.
+
+### Storm breathing pulse (`js/game.js`)
+
+- The storm boundary's opacity now cycles 0.3 → 0.8 on a 3-second sine loop (`drawStormBoundary`) instead of a fixed opacity — this is the *only* visible hint that a round is progressing; still no numeric countdown anywhere.
+- On storm advance, the boundary flashes bright red (`#E63946`) for 300ms. Detected by comparing the room's `stormRadius` against the previously-seen value in `onRoomUpdate` (`prevStormR`) — guarded so the very first room snapshot never falsely flashes.
+- Eliminated stones burst-fade (scale to 1.3x, fade over 250ms) via the same `dyingStones` mechanism used for snaps, just tagged `kind: 'storm'` instead of `kind: 'snap'`.
+
+### Zoom and pan (`js/game.js`)
+
+Replaced the single `pointerdown` → place-stone wiring with full pointer/gesture handling:
+- **Pinch to zoom**: tracks up to two active pointers; zoom is clamped to [0.5x, 3x] and re-centered on the pinch midpoint each frame (`zoomAround`) so the point under your fingers stays visually fixed as you zoom, rather than the view jumping to the canvas center.
+- **Drag to pan**: a single pointer moving more than 6px while zoomed in (`zoom > 1.02`) pans instead of placing a stone.
+- **Double-tap to reset**: zoom and pan snap back to 1x/0,0.
+- **Tap to place**: unchanged in effect, but now goes through `toWorldCoords()` to invert the current zoom/pan transform before hit-testing against the board.
+
+**Deliberate tradeoff, flagged rather than hidden:** disambiguating a normal tap from "the first half of a double-tap" requires *not* committing to either action until either a timeout expires or a second tap arrives. This adds roughly 280ms of latency to every single stone placement (`DOUBLE_TAP_MS`). There's no way to support instant-placing taps and reliable double-tap-to-reset simultaneously — a tap has to either commit immediately (making double-tap-to-place indistinguishable from double-tap-to-reset) or wait briefly to see if a second tap follows. Chose the wait, since double-tap-reset was explicitly requested as a first-class gesture. If the added latency feels bad in practice, the alternative is dropping double-tap-to-reset in favor of, say, a dedicated reset-zoom button.
+
+The minimap and all HUD chips are unaffected by board zoom/pan (they're separate DOM/canvas elements) — confirmed by design, not by accident.
+
+### Board size (`js/game.js`, `js/firebase.js`)
+
+- `resizeCanvas()` now reserves `HUD_TOP_CLEARANCE` (64px) and `HUD_BOTTOM_CLEARANCE` (110px) and fits the square board into the vertical band between them, rather than sizing off the full viewport and letting the board sit under the floating HUD bars.
+- `createRoom()` and `resetToLobby()` now seed `stormRadius: 0.95` instead of `1.0` (`STARTING_STORM_RADIUS`) — the storm boundary is visibly inset from the true board edge from round 1, rather than starting flush with it.
+
+### Shop button (`screens/game.html`)
+
+`.hud-shop-chip` is now larger (13px font, 11px/16px padding vs. the prior 10px/7px/10px) and uses a warm amber/brass fill (`#C9862E`, darkening to `#A8701F` on press) instead of the cream chip color, so it stands out from the rest of the HUD at a glance.
+
+### QA pass results
+
+**Could not perform live browser testing again this session** — Claude-in-Chrome reported "not connected" on both an initial and a retry attempt; stopped there per guidance rather than looping on a failing connection. Every item below is from re-reading the actual code paths end-to-end, including deliberately re-deriving the join-room bug from the write/navigate/disconnect sequence rather than guessing.
+
+CODE QUALITY:
+- [x] No dead code / unused variables — swept the new gesture-handling state and confirmed every declared constant and variable is read somewhere (`MIN_ZOOM`/`MAX_ZOOM` in the pinch clamp, `hadPinch` in the tap-suppression check, etc.).
+- [x] No `console.log` in production code — grepped the whole project, zero matches.
+- [x] No hardcoded magic numbers that should be constants — every new timing/distance value (shake amplitude, ripple duration, double-tap window, HUD clearances, etc.) is a named constant at the top of `game.js`.
+- [x] No duplicate logic — fixed one before it shipped: `draw()` was calling `getStonePositions()` twice per frame (once for danger radii, once for stones); now computed once and reused.
+- [x] Functions do one thing — `onStoneRemoved`/`onSnapReceived` split responsibilities cleanly (kind classification vs. shared FX triggering) specifically to avoid an ordering-dependent tangle.
+
+FUNCTIONALITY (traced, not click-tested — see note above):
+- [x] Snap VFX fires exactly once per event, from the existing `snapLog` dedupe guard in `onSnapReceived` — confirmed unchanged.
+- [x] Danger radius uses the same `SNAP_RADIUS` constant (50px) as the actual snap-resolution check in `physics.js`/`resolveSnapPenalty` — confirmed they can't drift apart since it's one imported constant, not two hardcoded 50s.
+- [x] Placement animation reads `placedAt` from the same value written by `placeStone()`/`tryPlaceStone()` — confirmed the field threads through Firebase → `onStoneReceived` → `physics.addStone` → `getStonePositions()` without renaming anywhere along the way.
+- [x] Storm flash triggers on `stormRadius` change, confirmed guarded against a false flash on the very first room snapshot.
+- [x] Zoom clamps to [0.5, 3] in both the pinch handler and nowhere else needs a redundant clamp, since `zoomAround` always receives an already-clamped value.
+- [ ] **Not verified live**: actual gesture feel (pinch responsiveness, whether 280ms tap delay feels laggy in practice), real device haptics, and — most importantly — the two-browser-session join test the task explicitly asked for. Recommend testing this manually before relying on the join-room fix; the reasoning is sound but reasoning isn't the same as a live click-through, and I want to be honest about that gap rather than imply I confirmed it.
+
+INTEGRATION:
+- [x] Every `getElementById` call in the rewritten `game.js` cross-checked against `game.html`'s actual ids — all match (no ids changed this session, only CSS values and JS logic).
+- [x] Firebase schema addition (`snaps/{id}.stoneIds`) is additive — old snap events without it are handled via `snap.stoneIds ?? []`, so nothing reads a field that might not exist and throws.
+- [x] `armDisconnectCleanup`/`cancelDisconnectCleanup` only touch `rooms/{code}/players/{playerId}` — verified they can't affect any other player's node.
+
+DESIGN:
+- [x] Danger radius styled per the explicit ask (1px dashed, 10% ink opacity, no glow) rather than defaulting to a more "modern" glowing ring.
+- [x] Shop button color (`#C9862E` amber/brass) chosen to read as warm/metallic against the cream/ink palette rather than clashing with it.
+
+### Deliberate decisions worth knowing about
+
+1. Double-tap-to-reset requires delaying every single tap by up to 280ms to disambiguate it from a placement. Flagged above as a real tradeoff, not a hidden cost.
+2. The ordering race between a snap's two Firebase writes (event vs. stone removal) is resolved for the *visual* outcome (correct animation kind either way) but not eliminated at the network level — this only matters for cosmetic animation selection, not for game-state correctness, which was never affected.
+3. Storm-culled stones get a distinct "burst-fade" (scale 1.3x, 250ms) rather than reusing the snap animation (scale 1.4x, 80ms) — same underlying mechanism, different constants, so the two feel distinguishable.
+
+### Next task
+
+- Live two-browser-session test of the join-room fix once the Chrome extension reconnects.
+- Manual feel-check of the 280ms tap delay and pinch-zoom responsiveness on a real touch device.
+- Power-up activation effects, sound design — still not started, unchanged from prior sessions.
+
+---
