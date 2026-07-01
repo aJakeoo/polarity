@@ -2,9 +2,10 @@ import { AVATARS, PLAYER_COLORS } from './main.js';
 
 const BOT_NAMES = ['ALPHA', 'BETA', 'GAMMA', 'DELTA', 'ECHO',
                    'FOXTROT', 'GOLF', 'HOTEL', 'INDIA', 'JULIET'];
-const CLUSTER_AVOID_R = 56;  // 2x snap radius
+const CLUSTER_AVOID_R = 50;  // matches physics.js SNAP_RADIUS — bots avoid triggering snaps
 
-// Build a bot player object. index determines name and fallback color/avatar.
+// Build a bot identity { id, name, avatar, color }. Starting stones/flux/powerUps
+// are assigned by firebase.js addBotToRoom, matching every other player's starting state.
 export function createBot(index, usedColors = [], usedAvatarIds = []) {
   const color = PLAYER_COLORS.find(c => !usedColors.includes(c))
              ?? PLAYER_COLORS[index % PLAYER_COLORS.length];
@@ -14,17 +15,10 @@ export function createBot(index, usedColors = [], usedAvatarIds = []) {
   const avatar = pool[Math.floor(Math.random() * pool.length)].id;
 
   return {
-    id:          `bot_${index}_${Math.random().toString(36).slice(2, 6)}`,
-    name:        BOT_NAMES[index % BOT_NAMES.length],
+    id:     `bot_${index}_${Math.random().toString(36).slice(2, 6)}`,
+    name:   BOT_NAMES[index % BOT_NAMES.length],
     avatar,
     color,
-    plusStones:  50,
-    minusStones: 5,
-    flux:        0,
-    powerUps:    [null, null, null],
-    isBot:       true,
-    isHost:      false,
-    isReady:     true,
   };
 }
 

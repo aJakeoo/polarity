@@ -168,7 +168,7 @@ function buildWaitingSlot() {
 
   const avatarDiv = document.createElement('div');
   avatarDiv.className = 'avatar-circle';
-  avatarDiv.style.borderColor = '#CCCCCC';
+  avatarDiv.style.borderColor = 'var(--border)';
   avatarDiv.style.borderStyle = 'dashed';
   const q = document.createElement('span');
   q.className = 'avatar-placeholder';

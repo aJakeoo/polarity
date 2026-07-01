@@ -1,33 +1,41 @@
 import { getOrCreatePlayerId, getParam, avatarSrc, showToast } from './main.js';
 import {
   subscribeToRoom,
-  placeStone, subscribeToStones,
-  recordSnap, subscribeToSnaps,
+  placeStone, subscribeToStones, subscribeToStoneRemovals,
+  removeStonesFromRound, recordSnapEvent, subscribeToSnaps,
   advanceRound, finishGame,
 } from './firebase.js';
 import {
   initPhysics, destroyPhysics,
   addStone, removeStone,
-  getStonePositions, setStormRadius, updateBoardBounds,
+  getStonePositions, findPlusStonesNear,
 } from './physics.js';
 import { getBotPlacement } from './bot.js';
 import { haptics } from './haptics.js';
+import { POWERUP_ICONS } from './powerups.js';
 
 const roomCode = getParam('room');
 const myId     = getOrCreatePlayerId();
 
 if (!roomCode) window.location.href = '../index.html';
 
+const SNAP_INDICATOR_MS  = 600;
+const STORM_SHRINK_STEP  = 0.12; // fraction removed from the storm radius each round
+const STORM_FLOOR        = 0.3;  // minimum playable storm radius — never reaches zero
+const MAX_HUD_PLAYERS    = 4;    // visible player cards in the floating HUD stack
+
 // ── DOM ───────────────────────────────────────────────────────────────────────
-const canvas      = document.getElementById('board-canvas');
-const ctx         = canvas.getContext('2d');
-const hudRound    = document.getElementById('hud-round');
-const snapCount   = document.getElementById('snap-count');
-const playerStrip = document.getElementById('player-strip');
-const countPlus   = document.getElementById('count-plus');
-const countMinus  = document.getElementById('count-minus');
-const btnPlus     = document.getElementById('btn-plus');
-const btnMinus    = document.getElementById('btn-minus');
+const canvas         = document.getElementById('board-canvas');
+const ctx             = canvas.getContext('2d');
+const minimapCanvas   = document.getElementById('minimap-canvas');
+const minimapCtx      = minimapCanvas.getContext('2d');
+const hudRound        = document.getElementById('hud-round');
+const playerStack     = document.getElementById('player-stack');
+const powerupSlotsEl  = document.getElementById('powerup-slots');
+const handTally       = document.getElementById('hand-tally');
+const btnPlus         = document.getElementById('btn-plus');
+const btnMinus        = document.getElementById('btn-minus');
+const btnShop         = document.getElementById('btn-shop');
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let room             = null;
@@ -36,44 +44,41 @@ let selectedPol      = '+';
 let boardCX          = 0;
 let boardCY          = 0;
 let boardHalf        = 0;   // half the side length of the square board
-let physicsReady     = false;
 let roundActive      = false;
 let stormR           = 1.0;
 let timerInterval    = null;
 let lastRound        = 0;
-let mySnapCount      = 0;
-let localStones      = new Map();
-let snapLog          = new Map();
+let localStones      = new Map();  // id -> { nx, ny, polarity, owner, placedAt, round }
+let snapLog          = new Map();  // dedupes incoming snap events
+let subscribedRounds = new Set();
+let snapIndicators   = [];         // { x, y, until }
 let _finishTriggered = false;
-let unsubRoom, unsubStones, unsubSnaps;
 
 // ── Canvas ────────────────────────────────────────────────────────────────────
 function resizeCanvas() {
-  const wrap = canvas.parentElement;
-  canvas.width  = wrap.clientWidth;
-  canvas.height = wrap.clientHeight;
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
   boardCX   = canvas.width  / 2;
   boardCY   = canvas.height / 2;
-  // Square board: side = full canvas width with small inset
-  boardHalf = canvas.width / 2 * 0.96;
-  if (physicsReady) updateBoardBounds({ boardCX, boardCY, boardHalf });
+  // Square board: side = the smaller viewport dimension, with a small inset
+  boardHalf = Math.min(canvas.width, canvas.height) / 2 * 0.96;
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 function init() {
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('beforeunload', destroyPhysics);
 
-  initPhysics({ boardCX, boardCY, boardHalf, onSnap: handleLocalSnap });
-  physicsReady = true;
-
+  initPhysics();
   requestAnimationFrame(drawLoop);
 
   canvas.addEventListener('pointerdown', onBoardTap);
   btnPlus.addEventListener('click',  () => selectPol('+'));
   btnMinus.addEventListener('click', () => selectPol('-'));
+  btnShop.addEventListener('click',  () => { window.location.href = `shop.html?room=${roomCode}`; });
 
-  unsubRoom = subscribeToRoom(roomCode, onRoomUpdate);
+  subscribeToRoom(roomCode, onRoomUpdate);
 }
 
 function selectPol(p) {
@@ -95,26 +100,26 @@ function onRoomUpdate(r) {
     return;
   }
 
-  hudRound.textContent = `ROUND ${r.round ?? 1}`;
+  hudRound.textContent = `RND ${r.round ?? 1}`;
   stormR = r.stormRadius ?? 1.0;
-  setStormRadius(stormR);
 
-  countPlus.textContent  = me.plusStones  ?? 0;
-  countMinus.textContent = me.minusStones ?? 0;
-  btnPlus.disabled  = (me.plusStones  ?? 0) <= 0;
-  btnMinus.disabled = (me.minusStones ?? 0) <= 0;
+  const plus  = me.plusStones  ?? 0;
+  const minus = me.minusStones ?? 0;
+  handTally.textContent = `[+] ${plus}  [-] ${minus}`;
+  btnPlus.disabled  = plus  <= 0;
+  btnMinus.disabled = minus <= 0;
 
-  if (btnPlus.disabled  && selectedPol === '+' && (me.minusStones ?? 0) > 0) selectPol('-');
-  if (btnMinus.disabled && selectedPol === '-' && (me.plusStones  ?? 0) > 0) selectPol('+');
+  if (btnPlus.disabled  && selectedPol === '+' && minus > 0) selectPol('-');
+  if (btnMinus.disabled && selectedPol === '-' && plus  > 0) selectPol('+');
 
-  renderPlayerStrip(r.players);
+  renderPlayerStack(r.players);
+  renderPowerupSlots(me);
 
-  // Win detection: first player to reach 0 total stones wins (host triggers)
+  // Win condition: first player whose plusStones AND minusStones are both 0
   if (r.status === 'playing' && r.host === myId && !_finishTriggered) {
     const players = r.players || {};
     for (const [pid, p] of Object.entries(players)) {
-      const total = (p.plusStones ?? 1) + (p.minusStones ?? 1);
-      if (total === 0) {
+      if ((p.plusStones ?? 1) === 0 && (p.minusStones ?? 1) === 0) {
         _finishTriggered = true;
         clearInterval(timerInterval);
         roundActive = false;
@@ -126,7 +131,7 @@ function onRoomUpdate(r) {
 
   if (r.status === 'playing' && r.round !== lastRound) {
     lastRound = r.round;
-    startNewRound(r.round, r.timerDuration ?? 60);
+    startNewRound(r.round, r.timerDuration ?? 20);
   }
 }
 
@@ -135,11 +140,14 @@ function startNewRound(round, duration) {
   roundActive = true;
   clearInterval(timerInterval);
 
-  // Stones persist across rounds (storm board — never wipe the board)
-  // snapLog persists too (prevents duplicate snap processing)
-  // Just add new subscriptions for this round without destroying old ones
-  subscribeToStones(roomCode, round, onStoneReceived);
-  subscribeToSnaps(roomCode, round, onSnapReceived);
+  // Stones persist across rounds — the board is never wiped. Subscriptions for
+  // earlier rounds are intentionally left running so their stones keep syncing.
+  if (!subscribedRounds.has(round)) {
+    subscribedRounds.add(round);
+    subscribeToStones(roomCode, round, (id, stone) => onStoneReceived(id, stone, round));
+    subscribeToStoneRemovals(roomCode, round, onStoneRemoved);
+    subscribeToSnaps(roomCode, round, onSnapReceived);
+  }
 
   if (room?.host === myId) {
     startHostTimer(duration);
@@ -147,7 +155,7 @@ function startNewRound(round, duration) {
   }
 }
 
-// Host-only silent timer — advances storm when round expires
+// Host-only silent timer — advances the storm when the round expires. No UI is shown.
 function startHostTimer(seconds) {
   const endAt = Date.now() + seconds * 1000;
   timerInterval = setInterval(() => {
@@ -159,30 +167,30 @@ function startHostTimer(seconds) {
   }, 500);
 }
 
+// Storm keeps shrinking every round and parks at the floor once reached — it
+// never ends the game on its own. The only win trigger is the 0/0 inventory
+// check in onRoomUpdate.
 async function doEndRound() {
-  const newStorm = parseFloat(Math.max(0.3, stormR - 0.12).toFixed(2));
-  if (stormR <= 0.3) {
-    try { await _finishGame(); } catch (_) {}
-    return;
+  const newStorm = parseFloat(Math.max(STORM_FLOOR, stormR - STORM_SHRINK_STEP).toFixed(2));
+
+  // Storm boundary moves inward — anything now outside it is permanently removed.
+  const byRound = new Map();
+  for (const [id, s] of localStones) {
+    if (Math.abs(s.nx) > newStorm || Math.abs(s.ny) > newStorm) {
+      if (!byRound.has(s.round)) byRound.set(s.round, []);
+      byRound.get(s.round).push(id);
+    }
   }
+  for (const [round, ids] of byRound) {
+    try { await removeStonesFromRound(roomCode, round, ids, null, 0); } catch (_) {}
+  }
+
   const nextRound = (room?.round ?? 1) + 1;
   try {
     await advanceRound(roomCode, nextRound, newStorm);
   } catch (e) {
     setTimeout(() => advanceRound(roomCode, nextRound, newStorm).catch(() => {}), 1000);
   }
-}
-
-async function _finishGame() {
-  // Win condition: fewest total stones remaining
-  const players = room?.players ?? {};
-  let winnerId  = null;
-  let minStones = Infinity;
-  for (const [pid, p] of Object.entries(players)) {
-    const total = (p.plusStones ?? 0) + (p.minusStones ?? 0);
-    if (total < minStones) { minStones = total; winnerId = pid; }
-  }
-  if (winnerId) await finishGame(roomCode, winnerId);
 }
 
 // ── Bot simulation (host only) ────────────────────────────────────────────────
@@ -211,9 +219,7 @@ async function _placeBotStone(bot, round) {
   const { nx, ny }   = getBotPlacement(stormR, boardHalf, existingNxNy);
 
   try {
-    await placeStone(roomCode, round, {
-      owner: bot.id, polarity: pol, nx, ny, placedAt: Date.now(),
-    });
+    await tryPlaceStone(bot.id, round, pol, nx, ny);
   } catch (_) {}
 }
 
@@ -222,8 +228,8 @@ async function onBoardTap(e) {
   if (!roundActive || !me || !room) return;
 
   const rect = canvas.getBoundingClientRect();
-  const px = (e.clientX - rect.left)  * (canvas.width  / rect.width);
-  const py = (e.clientY - rect.top)   * (canvas.height / rect.height);
+  const px = (e.clientX - rect.left) * (canvas.width  / rect.width);
+  const py = (e.clientY - rect.top)  * (canvas.height / rect.height);
   const dx = px - boardCX;
   const dy = py - boardCY;
 
@@ -240,17 +246,53 @@ async function onBoardTap(e) {
 
   haptics.tap();
   try {
-    await placeStone(roomCode, room.round, {
-      owner: myId, polarity: pol, nx, ny, placedAt: Date.now(),
-    });
+    await tryPlaceStone(myId, room.round, pol, nx, ny);
   } catch {
     showToast('PLACEMENT FAILED');
   }
 }
 
-function onStoneReceived(id, stone) {
-  if (localStones.has(id) || snapLog.has(`snapped_${id}`)) return;
-  localStones.set(id, stone);
+// Places a stone, or — for a + stone landing within snap radius of an existing
+// + stone — resolves a snap penalty instead of placing anything.
+async function tryPlaceStone(ownerId, round, pol, nx, ny) {
+  if (pol === '+') {
+    const px = boardCX + nx * boardHalf;
+    const py = boardCY + ny * boardHalf;
+    const touched = findPlusStonesNear(px, py);
+    if (touched.length > 0) {
+      await resolveSnapPenalty(ownerId, round, touched, nx, ny);
+      return;
+    }
+  }
+  await placeStone(roomCode, round, { owner: ownerId, polarity: pol, nx, ny, placedAt: Date.now() });
+}
+
+async function resolveSnapPenalty(placerId, currentRound, touchedIds, nx, ny) {
+  const byRound = new Map();
+  for (const id of touchedIds) {
+    const s = localStones.get(id);
+    if (!s) continue;
+    if (!byRound.has(s.round)) byRound.set(s.round, []);
+    byRound.get(s.round).push(id);
+  }
+
+  if (placerId === myId) {
+    haptics.snap();
+    showToast(`SNAPPED! +${touchedIds.length} RETURNED`);
+  }
+
+  await recordSnapEvent(roomCode, currentRound, {
+    placerId, count: touchedIds.length, nx, ny, at: Date.now(),
+  });
+
+  for (const [round, ids] of byRound) {
+    await removeStonesFromRound(roomCode, round, ids, placerId, ids.length);
+  }
+}
+
+function onStoneReceived(id, stone, round) {
+  if (localStones.has(id)) return;
+  localStones.set(id, { ...stone, round });
   addStone({
     id,
     x: boardCX + stone.nx * boardHalf,
@@ -261,42 +303,24 @@ function onStoneReceived(id, stone) {
   });
 }
 
+function onStoneRemoved(id) {
+  if (!localStones.has(id)) return;
+  removeStone(id);
+  localStones.delete(id);
+}
+
 function onSnapReceived(id, snap) {
   if (snapLog.has(id)) return;
   snapLog.set(id, snap);
-  // Mark both stones as snapped so they're never re-added
-  snapLog.set(`snapped_${snap.placerStoneId}`, true);
-  snapLog.set(`snapped_${snap.victimStoneId}`, true);
-  for (const stoneId of [snap.placerStoneId, snap.victimStoneId]) {
-    if (localStones.has(stoneId)) {
-      removeStone(stoneId);
-      localStones.delete(stoneId);
-    }
-  }
-}
-
-function handleLocalSnap({ placerStoneId, victimStoneId, placerPlayerId }) {
-  const isMe        = placerPlayerId === myId;
-  const isBotOnHost = room?.players?.[placerPlayerId]?.isBot && room?.host === myId;
-  if (!isMe && !isBotOnHost) return;
-
-  const snapId = `${placerStoneId}_vs_${victimStoneId}`;
-  if (snapLog.has(snapId)) return;
-
-  if (isMe) {
-    haptics.snap();
-    mySnapCount++;
-    snapCount.textContent = `SNAP ${mySnapCount}`;
-    showToast('SNAPPED — +2 RETURNED');
-  }
-
-  recordSnap(roomCode, room?.round ?? 1, {
-    id: snapId, placerStoneId, victimStoneId, placerPlayerId, at: Date.now(),
+  snapIndicators.push({
+    x: boardCX + snap.nx * boardHalf,
+    y: boardCY + snap.ny * boardHalf,
+    until: Date.now() + SNAP_INDICATOR_MS,
   });
 }
 
-// ── Player strip (top HUD) ────────────────────────────────────────────────────
-function renderPlayerStrip(players) {
+// ── Floating HUD: player stack (top right) ────────────────────────────────────
+function renderPlayerStack(players) {
   if (!players) return;
   const sorted = Object.entries(players).sort(([, a], [, b]) => {
     if (a.isHost && !b.isHost) return -1;
@@ -304,25 +328,34 @@ function renderPlayerStrip(players) {
     return (a.joinedAt ?? 0) - (b.joinedAt ?? 0);
   });
 
-  playerStrip.innerHTML = sorted.map(([id, p]) => {
+  playerStack.innerHTML = sorted.slice(0, MAX_HUD_PLAYERS).map(([id, p]) => {
     const isMe = id === myId;
     const src  = avatarSrc(p.avatar, true);
     return `
-      <div class="strip-player">
-        <div class="strip-avatar${isMe ? ' is-me' : ''}"
-             style="border-color:${p.color};background:${p.color}">
-          <img src="${src}" alt="${p.name}">
+      <div class="player-card${isMe ? ' is-me' : ''}">
+        <div class="player-card-row">
+          <div class="player-card-avatar" style="border-color:${p.color};background:${p.color}">
+            <img src="${src}" alt="${p.name}">
+          </div>
+          <span class="player-card-name">${p.name}</span>
         </div>
-        <div class="strip-counts" style="color:${p.color}">
-          +${p.plusStones ?? 0} −${p.minusStones ?? 0}
-        </div>
+        <div class="player-card-counts" style="color:${p.color}">+${p.plusStones ?? 0} &minus;${p.minusStones ?? 0}</div>
       </div>`;
   }).join('');
+}
+
+// ── Floating HUD: power-up slots (bottom tray) ────────────────────────────────
+function renderPowerupSlots(player) {
+  const owned = (player?.powerUps ?? []).filter(Boolean);
+  powerupSlotsEl.innerHTML = owned.map(key =>
+    `<div class="powerup-slot" title="${key}">${POWERUP_ICONS[key] ?? '?'}</div>`
+  ).join('');
 }
 
 // ── Draw loop ─────────────────────────────────────────────────────────────────
 function drawLoop() {
   draw();
+  drawMinimap();
   requestAnimationFrame(drawLoop);
 }
 
@@ -330,35 +363,34 @@ function draw() {
   const W = canvas.width;
   const H = canvas.height;
 
-  // Full-bleed cream board — no dark surround
-  ctx.fillStyle = '#F5F0E5';
+  // Full-bleed cream board — the board surface never changes or gets erased.
+  ctx.fillStyle = '#F5F0E8';
   ctx.fillRect(0, 0, W, H);
 
-  // Dot grid across full canvas
   drawDotGrid();
 
-  // Storm boundary — dashed rect moves inward each round
-  // Never erases board; stones outside boundary just fade (handled in drawStone)
+  // Storm boundary — only this dashed rect moves inward as the storm advances.
   const sh = boardHalf * stormR;
   ctx.save();
-  ctx.strokeStyle = '#E63946';
-  ctx.lineWidth   = 1.5;
-  ctx.setLineDash([5, 4]);
+  ctx.strokeStyle = '#1C1208';
+  ctx.lineWidth   = 2;
+  ctx.setLineDash([9, 5]);
   ctx.strokeRect(boardCX - sh, boardCY - sh, sh * 2, sh * 2);
   ctx.restore();
 
-  // Stones (outside-storm stones drawn at 30% opacity)
+  // Stones (outside-storm stones drawn at 30% opacity, non-interactive)
   for (const stone of getStonePositions()) {
     drawStone(stone);
   }
+
+  drawSnapIndicators();
 }
 
 function drawDotGrid() {
   const spacing = 28;
-  const dotR    = 1.5;
-  ctx.fillStyle = 'rgba(28,18,8,0.12)';
+  const dotR    = 1.6;
+  ctx.fillStyle = 'rgba(28,18,8,0.28)';
 
-  // Cover full canvas
   for (let gx = spacing / 2; gx < canvas.width; gx += spacing) {
     for (let gy = spacing / 2; gy < canvas.height; gy += spacing) {
       ctx.beginPath();
@@ -370,7 +402,7 @@ function drawDotGrid() {
 
 function drawStone({ x, y, polarity, playerId }) {
   const p     = room?.players?.[playerId];
-  const color = p?.color ?? '#1A1A1A';
+  const color = p?.color ?? '#1C1208';
   const r     = 12;
 
   // Stones outside the storm boundary fade to 30% opacity, non-interactive
@@ -384,7 +416,7 @@ function drawStone({ x, y, polarity, playerId }) {
   if (polarity === '+') {
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#1A1A1A';
+    ctx.fillStyle = '#1C1208';
     ctx.fill();
 
     ctx.beginPath();
@@ -394,7 +426,7 @@ function drawStone({ x, y, polarity, playerId }) {
     ctx.stroke();
 
     ctx.fillStyle    = '#F5F0E8';
-    ctx.font         = 'bold 13px Space Mono, monospace';
+    ctx.font         = 'bold 13px "Space Mono", monospace';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('+', x, y + 0.5);
@@ -406,7 +438,7 @@ function drawStone({ x, y, polarity, playerId }) {
 
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.strokeStyle = '#1A1A1A';
+    ctx.strokeStyle = '#1C1208';
     ctx.lineWidth   = 2;
     ctx.stroke();
 
@@ -416,13 +448,68 @@ function drawStone({ x, y, polarity, playerId }) {
     ctx.lineWidth   = 2;
     ctx.stroke();
 
-    ctx.fillStyle    = '#1A1A1A';
-    ctx.font         = 'bold 13px Space Mono, monospace';
+    ctx.fillStyle    = '#1C1208';
+    ctx.font         = 'bold 13px "Space Mono", monospace';
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('−', x, y + 0.5);
   }
   ctx.restore();
+}
+
+function drawSnapIndicators() {
+  const now = Date.now();
+  snapIndicators = snapIndicators.filter(ind => ind.until > now);
+  for (const ind of snapIndicators) {
+    const remaining = (ind.until - now) / SNAP_INDICATOR_MS; // 1 -> 0
+    ctx.save();
+    ctx.globalAlpha = remaining;
+    ctx.strokeStyle = '#1C1208';
+    ctx.lineWidth   = 3;
+    ctx.beginPath();
+    ctx.arc(ind.x, ind.y, 14 + (1 - remaining) * 26, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ── Minimap ────────────────────────────────────────────────────────────────────
+function drawMinimap() {
+  const W = minimapCanvas.width;
+  const H = minimapCanvas.height;
+  const cx = W / 2;
+  const cy = H / 2;
+  const half = Math.min(W, H) / 2 * 0.86;
+
+  minimapCtx.clearRect(0, 0, W, H);
+  minimapCtx.fillStyle = '#EEE8D4';
+  minimapCtx.fillRect(0, 0, W, H);
+
+  const sh = half * stormR;
+  minimapCtx.strokeStyle = '#1C1208';
+  minimapCtx.lineWidth = 1;
+  minimapCtx.setLineDash([2, 1.5]);
+  minimapCtx.strokeRect(cx - sh, cy - sh, sh * 2, sh * 2);
+  minimapCtx.setLineDash([]);
+
+  for (const stone of getStonePositions()) {
+    const nx = (stone.x - boardCX) / boardHalf;
+    const ny = (stone.y - boardCY) / boardHalf;
+    const mx = cx + nx * half;
+    const my = cy + ny * half;
+    minimapCtx.beginPath();
+    minimapCtx.arc(mx, my, 1.8, 0, Math.PI * 2);
+    if (stone.polarity === '+') {
+      minimapCtx.fillStyle = '#1C1208';
+      minimapCtx.fill();
+    } else {
+      minimapCtx.fillStyle = '#EEE8D4';
+      minimapCtx.fill();
+      minimapCtx.strokeStyle = '#1C1208';
+      minimapCtx.lineWidth = 0.8;
+      minimapCtx.stroke();
+    }
+  }
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────

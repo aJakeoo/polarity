@@ -8,12 +8,18 @@ import {
   push,
   onValue,
   onChildAdded,
+  onChildRemoved,
   off,
   remove,
   onDisconnect,
   serverTimestamp,
   increment,
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+
+const STARTING_PLUS_STONES  = 50;
+const STARTING_MINUS_STONES = 5;
+const STARTING_FLUX         = 500;
+const DEFAULT_TIMER_SECONDS = 20;
 
 // ── Firebase config ──────────────────────────────────────────────────────────
 // Fill in your project values from the Firebase console.
@@ -45,16 +51,16 @@ export async function createRoom(code, hostPlayer) {
     status:        'lobby',
     round:         0,
     stormRadius:   1.0,
-    timerDuration: 60,
+    timerDuration: DEFAULT_TIMER_SECONDS,
     createdAt:     serverTimestamp(),
     players: {
       [hostPlayer.id]: {
         name:        hostPlayer.name,
         avatar:      hostPlayer.avatar,
         color:       hostPlayer.color,
-        plusStones:  50,
-        minusStones: 5,
-        flux:        0,
+        plusStones:  STARTING_PLUS_STONES,
+        minusStones: STARTING_MINUS_STONES,
+        flux:        STARTING_FLUX,
         powerUps:    [null, null, null],
         isBot:       false,
         isHost:      true,
@@ -77,9 +83,9 @@ export async function joinRoom(code, player) {
     name:        player.name,
     avatar:      player.avatar,
     color:       player.color,
-    plusStones:  50,
-    minusStones: 5,
-    flux:        0,
+    plusStones:  STARTING_PLUS_STONES,
+    minusStones: STARTING_MINUS_STONES,
+    flux:        STARTING_FLUX,
     powerUps:    [null, null, null],
     isBot:       false,
     isHost:      false,
@@ -88,14 +94,6 @@ export async function joinRoom(code, player) {
   });
 
   // Remove player if they disconnect
-  onDisconnect(playerRef).remove();
-}
-
-export async function rejoinRoom(code, player) {
-  const playerRef = ref(db, `rooms/${code}/players/${player.id}`);
-  const snap = await get(playerRef);
-  if (!snap.exists()) throw new Error('PLAYER NOT IN ROOM');
-  // Re-arm disconnect cleanup
   onDisconnect(playerRef).remove();
 }
 
@@ -151,16 +149,35 @@ export function subscribeToStones(code, round, cb) {
   return () => off(r);
 }
 
-export async function recordSnap(code, round, snap) {
-  // Snap is a PENALTY: both stones return to the placer's inventory (+2)
-  await update(ref(db), {
-    [`rooms/${code}/rounds/${round}/snaps/${snap.id}`]: {
-      placerStoneId:  snap.placerStoneId,
-      victimStoneId:  snap.victimStoneId,
-      placerPlayerId: snap.placerPlayerId,
-      at:             snap.at,
-    },
-    [`rooms/${code}/players/${snap.placerPlayerId}/plusStones`]: increment(2),
+// Fires whenever a stone is deleted from this round (snap penalty or storm cull)
+// so every client can remove it from their local board.
+export function subscribeToStoneRemovals(code, round, cb) {
+  const r = ref(db, `rooms/${code}/rounds/${round}/stones`);
+  onChildRemoved(r, snap => cb(snap.key));
+  return () => off(r);
+}
+
+// Deletes stones from a round's board. When placerId is given, that many
+// stones are credited back to the placer's plusStones (snap penalty).
+// Called with placerId=null for storm-boundary culling (no credit).
+export async function removeStonesFromRound(code, round, ids, placerId, count) {
+  if (ids.length === 0) return;
+  const updates = {};
+  for (const id of ids) updates[`rooms/${code}/rounds/${round}/stones/${id}`] = null;
+  if (placerId) updates[`rooms/${code}/players/${placerId}/plusStones`] = increment(count);
+  await update(ref(db), updates);
+}
+
+// Broadcasts a snap event so every client can render a board indicator at the
+// snap location. Does not itself move stones or inventory (see removeStonesFromRound).
+export async function recordSnapEvent(code, round, snap) {
+  const snapRef = push(ref(db, `rooms/${code}/rounds/${round}/snaps`));
+  await set(snapRef, {
+    placerId: snap.placerId,
+    count:    snap.count,
+    nx:       snap.nx,
+    ny:       snap.ny,
+    at:       snap.at,
   });
 }
 
@@ -168,21 +185,6 @@ export function subscribeToSnaps(code, round, cb) {
   const r = ref(db, `rooms/${code}/rounds/${round}/snaps`);
   onChildAdded(r, snap => cb(snap.key, snap.val()));
   return () => off(r);
-}
-
-export async function endRound(code, newStormRadius) {
-  await update(ref(db, `rooms/${code}`), {
-    status:      'round_end',
-    stormRadius: newStormRadius,
-    endedAt:     serverTimestamp(),
-  });
-}
-
-export async function startRound(code, round) {
-  await update(ref(db, `rooms/${code}`), {
-    status: 'playing',
-    round,
-  });
 }
 
 // Seamlessly advance to the next round with updated storm radius (no round_end pause)
@@ -199,9 +201,9 @@ export async function addBotToRoom(code, bot) {
     name:        bot.name,
     avatar:      bot.avatar,
     color:       bot.color,
-    plusStones:  50,
-    minusStones: 5,
-    flux:        0,
+    plusStones:  STARTING_PLUS_STONES,
+    minusStones: STARTING_MINUS_STONES,
+    flux:        STARTING_FLUX,
     powerUps:    [null, null, null],
     isBot:       true,
     isHost:      false,
@@ -227,13 +229,17 @@ export async function resetToLobby(code, playerIds) {
     [`rooms/${code}/finishedAt`]:  null,
   };
   for (const id of playerIds) {
-    updates[`rooms/${code}/players/${id}/plusStones`]  = 50;
-    updates[`rooms/${code}/players/${id}/minusStones`] = 5;
+    updates[`rooms/${code}/players/${id}/plusStones`]  = STARTING_PLUS_STONES;
+    updates[`rooms/${code}/players/${id}/minusStones`] = STARTING_MINUS_STONES;
+    updates[`rooms/${code}/players/${id}/flux`]        = STARTING_FLUX;
+    updates[`rooms/${code}/players/${id}/powerUps`]    = [null, null, null];
     updates[`rooms/${code}/players/${id}/isReady`]     = false;
   }
   await update(ref(db), updates);
 }
 
+// Returns { playerId: snapPenaltyCount } — how many times each player triggered
+// a snap (a penalty, not an achievement) across all rounds.
 export async function getSnapScores(code, maxRound) {
   const scores = {};
   const promises = [];
@@ -244,8 +250,32 @@ export async function getSnapScores(code, maxRound) {
   for (const snap of results) {
     if (!snap.exists()) continue;
     for (const s of Object.values(snap.val())) {
-      scores[s.placerPlayerId] = (scores[s.placerPlayerId] || 0) + 1;
+      scores[s.placerId] = (scores[s.placerId] || 0) + 1;
     }
   }
   return scores;
+}
+
+// Deducts flux and adds a power-up to the player's queue (max 3, FIFO replacement).
+export async function buyPowerUp(code, playerId, key, cost) {
+  const playerRef = ref(db, `rooms/${code}/players/${playerId}`);
+  const snap = await get(playerRef);
+  if (!snap.exists()) throw new Error('PLAYER NOT FOUND');
+
+  const player = snap.val();
+  const flux   = player.flux ?? 0;
+  if (flux < cost) throw new Error('INSUFFICIENT FLUX');
+
+  const powerUps = player.powerUps ? [...player.powerUps] : [null, null, null];
+  if (powerUps.includes(key)) throw new Error('ALREADY OWNED');
+
+  const emptyIdx = powerUps.findIndex(p => p === null);
+  if (emptyIdx !== -1) {
+    powerUps[emptyIdx] = key;
+  } else {
+    powerUps.shift();
+    powerUps.push(key);
+  }
+
+  await update(playerRef, { flux: flux - cost, powerUps });
 }

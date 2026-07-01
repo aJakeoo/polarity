@@ -1,12 +1,13 @@
-// Power-up system — stub
-// Handles FLIP, SURGE, GHOST, ANCHOR purchase and activation.
-// Implemented in a future task.
+// Power-up catalog — purchase is fully wired (js/shop.js, js/firebase.js buyPowerUp).
+// In-game activation effects (SURGE freeze, FLIP reverse, GHOST invisible stone,
+// ANCHOR gravity well) are not yet implemented; owned power-ups currently only
+// display in the game HUD.
 
 export const POWERUPS = {
-  FLIP:   { label: 'FLIP',   category: 'OFFENSIVE', cost: 80,  desc: "Reverse a player's polarity" },
-  SURGE:  { label: 'SURGE',  category: 'OFFENSIVE', cost: 120, desc: 'Freeze a player one round'   },
-  GHOST:  { label: 'GHOST',  category: 'DEFENSIVE', cost: 150, desc: 'Place one invisible stone'   },
-  ANCHOR: { label: 'ANCHOR', category: 'CHAOS',     cost: 200, desc: 'Create a gravity well'       },
+  SURGE:  { label: 'SURGE',  category: 'OFFENSIVE',   cost: 120, desc: 'Freeze a player one round.' },
+  FLIP:   { label: 'FLIP',   category: 'OFFENSIVE',   cost: 80,  desc: "Reverse a player's polarity one round." },
+  ANCHOR: { label: 'ANCHOR', category: 'DEFENSIVE',   cost: 200, desc: 'Create a gravity well on the board.' },
+  GHOST:  { label: 'GHOST',  category: 'BOARD/CHAOS', cost: 150, desc: 'Place one invisible stone.' },
 };
 
-export const MAX_ACTIVE_POWERUPS = 3;
+export const POWERUP_ICONS = { SURGE: '⚡', FLIP: '↻', ANCHOR: '⚓', GHOST: '○' };

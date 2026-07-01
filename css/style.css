@@ -5,7 +5,7 @@
    ============================================================ */
 
 :root {
-  --paper:      #F5F0E5;
+  --paper:      #F5F0E8;
   --ink:        #1C1208;
   --muted:      #6B5D4A;
   --border:     #9E8C6E;
@@ -37,7 +37,7 @@ html {
 body {
   background: var(--paper);
   color: var(--ink);
-  font-family: 'Space Mono', 'Courier New', monospace;
+  font-family: 'Space Mono', 'Courier New', Courier, monospace;
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
 }
@@ -50,6 +50,13 @@ body {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+}
+
+/* ---- Screen header row (logo left, actions right) ---- */
+.screen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 /* ---- Logo stones (SVG-based in DC; legacy class kept for JS-rendered areas) ---- */
@@ -165,7 +172,7 @@ body {
   text-align: center;
   font-size: 28px;
   font-weight: bold;
-  font-family: 'Space Mono', 'Courier New', monospace;
+  font-family: 'Space Mono', 'Courier New', Courier, monospace;
   text-transform: uppercase;
   letter-spacing: 0;
   background: var(--white);
@@ -206,7 +213,7 @@ body {
   display: block;
   width: 100%;
   padding: 13px 14px;
-  font-family: 'Space Mono', 'Courier New', monospace;
+  font-family: 'Space Mono', 'Courier New', Courier, monospace;
   font-size: 15px;
   font-weight: bold;
   text-transform: uppercase;
@@ -233,7 +240,7 @@ body {
   display: block;
   width: 100%;
   padding: 16px 20px;
-  font-family: 'Space Mono', 'Courier New', monospace;
+  font-family: 'Space Mono', 'Courier New', Courier, monospace;
   font-size: 13px;
   font-weight: bold;
   letter-spacing: 1.5px;
@@ -440,7 +447,7 @@ body {
   transform: translateX(-50%) translateY(20px);
   background: var(--ink);
   color: var(--paper);
-  font-family: 'Space Mono', 'Courier New', monospace;
+  font-family: 'Space Mono', 'Courier New', Courier, monospace;
   font-size: 11px;
   font-weight: bold;
   letter-spacing: 2px;

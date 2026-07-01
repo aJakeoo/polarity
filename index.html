@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <meta name="theme-color" content="#F5F0E5">
+  <meta name="theme-color" content="#F5F0E8">
   <title>POLARITY — Magnetic Battle</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
   <style>
@@ -103,25 +103,19 @@
 
   <script type="module">
     import {
-      getOrCreatePlayerId,
       getPlayerName,
       setPlayerName,
-      getPlayerAvatar,
-      generateRoomCode,
-      pickColor,
       getParam,
       showToast,
     } from './js/main.js';
-    import {
-      createRoom,
-      joinRoom,
-      roomExists,
-      getUsedColors,
-    } from './js/firebase.js';
 
     // ── Restore saved name ─────────────────────────────────────────────────
     const nameInput = document.getElementById('player-name');
     nameInput.value = getPlayerName();
+
+    // ── Show error returned from a failed connecting.html attempt ──────────
+    const returnedError = getParam('error');
+    if (returnedError) showToast(`[ ${returnedError} ]`);
 
     // ── Code tile inputs ───────────────────────────────────────────────────
     const tiles = [...document.querySelectorAll('.code-input-tile')];
@@ -202,68 +196,19 @@
     }
 
     // ── Create room ────────────────────────────────────────────────────────
-    document.getElementById('create-btn').addEventListener('click', async () => {
+    document.getElementById('create-btn').addEventListener('click', () => {
       if (!validateName()) return;
-
-      const createBtn = document.getElementById('create-btn');
-      createBtn.disabled = true;
-      createBtn.textContent = '[ CREATING... ]';
-
-      try {
-        const playerId = getOrCreatePlayerId();
-        const color    = pickColor([]);
-        let code;
-        let attempts = 0;
-        do {
-          code = generateRoomCode();
-          attempts++;
-        } while (await roomExists(code) && attempts < 10);
-
-        await createRoom(code, {
-          id:     playerId,
-          name:   getName(),
-          avatar: getPlayerAvatar(),
-          color,
-        });
-
-        window.location.href = `screens/lobby.html?room=${code}`;
-      } catch (err) {
-        console.error(err);
-        showError('[ CONNECTION ERROR — CHECK FIREBASE CONFIG ]');
-        createBtn.disabled = false;
-        createBtn.textContent = '[ Create Room ]';
-      }
+      window.location.href = `screens/connecting.html?mode=creating&name=${encodeURIComponent(getName())}`;
     });
 
     // ── Join room ──────────────────────────────────────────────────────────
-    document.getElementById('join-btn').addEventListener('click', async () => {
+    document.getElementById('join-btn').addEventListener('click', () => {
       if (!validateName()) return;
 
       const code = tiles.map(t => t.value).join('');
       if (code.length < 4) { showError('[ ENTER 4-LETTER ROOM CODE ]'); return; }
 
-      joinBtn.disabled = true;
-      joinBtn.textContent = '[ JOINING... ]';
-
-      try {
-        const playerId    = getOrCreatePlayerId();
-        const usedColors  = await getUsedColors(code);
-        const color       = pickColor(usedColors);
-
-        await joinRoom(code, {
-          id:     playerId,
-          name:   getName(),
-          avatar: getPlayerAvatar(),
-          color,
-        });
-
-        window.location.href = `screens/lobby.html?room=${code}`;
-      } catch (err) {
-        showError(`[ ${err.message} ]`);
-        joinBtn.disabled = false;
-        joinBtn.textContent = '[ Join Room ]';
-        syncTiles();
-      }
+      window.location.href = `screens/connecting.html?mode=joining&name=${encodeURIComponent(getName())}&room=${code}`;
     });
   </script>
 </body>

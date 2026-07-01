@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#F5F0E8">
+  <title>POLARITY — Connecting</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap">
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    .connecting-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100dvh;
+      padding: 72px 32px 80px;
+    }
+
+    .connecting-logo {
+      margin-bottom: 44px;
+      animation: polarityPulse 2.8s ease-in-out infinite;
+    }
+
+    .connecting-status {
+      font-size: 13px;
+      font-weight: bold;
+      color: var(--ink);
+      letter-spacing: 2.5px;
+      margin-bottom: 30px;
+      text-align: center;
+    }
+
+    .connecting-dots {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .connecting-dots span.bracket {
+      font-size: 13px;
+      font-weight: bold;
+      color: var(--muted);
+    }
+
+    .connecting-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--ink);
+      animation: dotBlink 1.2s steps(1, end) infinite;
+    }
+
+    .connecting-dot:nth-child(2) { animation-delay: 0.4s; }
+    .connecting-dot:nth-child(3) { animation-delay: 0.8s; }
+  </style>
+</head>
+<body>
+
+  <div class="connecting-screen">
+    <div class="connecting-logo">
+      <svg width="96" height="56" viewBox="0 0 96 56">
+        <circle cx="26" cy="28" r="24" fill="#1C1208"></circle>
+        <text x="26" y="36" text-anchor="middle" fill="#F5F0E8" font-size="24" font-weight="700" font-family="'Space Mono',monospace">+</text>
+        <circle cx="70" cy="28" r="22" fill="#F5F0E8" stroke="#1C1208" stroke-width="3.5"></circle>
+        <text x="70" y="36" text-anchor="middle" fill="#1C1208" font-size="26" font-weight="700" font-family="'Space Mono',monospace">&minus;</text>
+      </svg>
+    </div>
+
+    <div class="connecting-status" id="status-text">[ CONNECTING... ]</div>
+
+    <div class="connecting-dots">
+      <span class="bracket">[</span>
+      <span class="connecting-dot"></span>
+      <span class="connecting-dot"></span>
+      <span class="connecting-dot"></span>
+      <span class="bracket">]</span>
+    </div>
+  </div>
+
+  <script type="module" src="../js/connecting.js"></script>
+</body>
+</html>

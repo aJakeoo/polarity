@@ -3,188 +3,258 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#F5F0E5">
+  <meta name="theme-color" content="#F5F0E8">
   <title>POLARITY — Game</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap">
   <link rel="stylesheet" href="../css/style.css">
   <script src="https://unpkg.com/matter-js@0.19.0/build/matter.min.js"></script>
   <style>
-    body { background: #F5F0E5; overflow: hidden; }
+    body { background: #F5F0E8; overflow: hidden; }
 
     #game-wrap {
-      display: flex;
-      flex-direction: column;
-      height: 100dvh;
-      max-width: 480px;
-      margin: 0 auto;
-    }
-
-    /* ── Top HUD ── */
-    #hud-top {
-      height: 48px;
-      display: flex;
-      align-items: center;
-      padding: 0 12px;
-      background: var(--paper);
-      border-bottom: 1.5px solid var(--ink);
-      flex-shrink: 0;
-      gap: 10px;
-    }
-
-    .hud-brand {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      flex-shrink: 0;
-    }
-
-    .hud-brand .stone-icon { width: 16px; height: 16px; font-size: 9px; }
-
-    .hud-brand-name {
-      font-size: 12px;
-      font-weight: bold;
-      letter-spacing: 0.1em;
-    }
-
-    .hud-sep {
-      color: var(--border);
-      font-size: 11px;
-      flex-shrink: 0;
-    }
-
-    #hud-round {
-      font-size: 9px;
-      letter-spacing: 0.12em;
-      color: var(--border);
-      flex-shrink: 0;
-    }
-
-    /* Player strip — top HUD right side */
-    #player-strip {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      gap: 10px;
-      overflow: hidden;
-    }
-
-    .strip-player {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-      flex-shrink: 0;
-    }
-
-    .strip-avatar {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      border: 2px solid var(--ink);
-      overflow: hidden;
-      background: var(--border);
-    }
-
-    .strip-avatar img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      mix-blend-mode: multiply;
-    }
-
-    .strip-avatar.is-me { border-width: 2.5px; }
-
-    .strip-counts {
-      font-size: 8px;
-      font-weight: bold;
-      letter-spacing: 0.02em;
-      white-space: nowrap;
-      line-height: 1;
-    }
-
-    /* ── Canvas ── */
-    #canvas-wrap {
-      flex: 1;
       position: relative;
+      width: 100%;
+      height: 100dvh;
       overflow: hidden;
-      background: #F5F0E5;
-      min-height: 0;
     }
 
     #board-canvas {
+      position: absolute;
+      inset: 0;
       display: block;
       width: 100%;
       height: 100%;
       touch-action: none;
     }
 
-    /* ── Bottom HUD ── */
-    #hud-bottom {
-      flex-shrink: 0;
-      background: var(--paper);
-      border-top: 1.5px solid var(--ink);
-      display: flex;
-      align-items: center;
-      padding: 10px 14px 14px;
-      gap: 10px;
-    }
-
-    /* Stone selector — left */
-    #stone-selector {
-      display: flex;
-      gap: 8px;
-      flex-shrink: 0;
-    }
-
-    .stone-btn {
-      width: 56px;
-      height: 56px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 2px;
-      font-family: 'Space Mono', 'Courier New', monospace;
+    /* ── Floating HUD chip (shared look) ── */
+    .hud-chip {
+      background: #FDFAF2;
+      border: 1.5px solid var(--ink);
+      box-shadow: 2px 2px 0 rgba(28, 18, 8, 0.65);
+      padding: 5px 10px;
       font-size: 11px;
       font-weight: bold;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
+      letter-spacing: 2.5px;
+    }
+
+    /* ── Top bar ── */
+    #hud-top-bar {
+      position: absolute;
+      top: max(16px, env(safe-area-inset-top));
+      left: 0;
+      right: 0;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    #hud-top-bar .hud-chip { pointer-events: auto; }
+
+    /* ── Minimap ── */
+    #hud-minimap {
+      position: absolute;
+      top: 60px;
+      left: 12px;
+      background: #FDFAF2;
       border: 1.5px solid var(--ink);
-      border-radius: 3px;
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-      transition: box-shadow 0.1s;
+      box-shadow: 3px 3px 0 rgba(28, 18, 8, 0.7);
+      padding: 6px 6px 5px;
+      z-index: 5;
     }
 
-    .stone-btn.plus  { background: var(--ink); color: var(--paper); }
-    .stone-btn.minus { background: transparent; color: var(--ink); }
-
-    .stone-btn.active {
-      box-shadow: 0 0 0 2.5px var(--paper), 0 0 0 4.5px var(--ink);
+    #minimap-label {
+      font-size: 7px;
+      font-weight: bold;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-align: center;
+      margin-bottom: 4px;
     }
 
-    .stone-btn:disabled { opacity: 0.25; cursor: not-allowed; box-shadow: none; }
+    #minimap-canvas { display: block; }
 
-    .stone-btn-sym { font-size: 20px; line-height: 1; }
-    .stone-btn-n   { font-size: 10px; opacity: 0.75; }
-
-    /* Game meta — right of stone selector */
-    #game-meta {
-      flex: 1;
+    /* ── Player stack (top right) ── */
+    #hud-player-stack {
+      position: absolute;
+      top: 60px;
+      right: 12px;
       display: flex;
       flex-direction: column;
-      align-items: flex-end;
+      align-items: stretch;
+      gap: 6px;
+      z-index: 5;
+      max-width: 46%;
+    }
+
+    #player-stack {
+      display: flex;
+      flex-direction: column;
       gap: 6px;
     }
 
-    #snap-count {
+    .player-card {
+      background: #FDFAF2;
+      border: 1.5px solid var(--ink);
+      box-shadow: 3px 3px 0 rgba(28, 18, 8, 0.7);
+      padding: 7px 9px;
+    }
+
+    .player-card.is-me { border-width: 2px; }
+
+    .player-card-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 3px;
+    }
+
+    .player-card-avatar {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 1.5px solid var(--ink);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .player-card-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      mix-blend-mode: multiply;
+      display: block;
+    }
+
+    .player-card-name {
+      font-size: 9px;
+      font-weight: bold;
+      letter-spacing: 1.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .player-card-counts {
+      font-size: 9px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    .hud-shop-chip {
+      align-self: flex-end;
+      font-family: 'Space Mono', 'Courier New', monospace;
       font-size: 10px;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--border);
+      font-weight: bold;
+      letter-spacing: 2px;
+      background: #FDFAF2;
+      border: 1.5px solid var(--ink);
+      box-shadow: 3px 3px 0 rgba(28, 18, 8, 0.7);
+      padding: 7px 10px;
+      cursor: pointer;
+      color: var(--ink);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .hud-shop-chip:active { background: var(--ink); color: var(--paper); }
+
+    /* ── Bottom tray ── */
+    #hud-bottom-tray {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: max(14px, env(safe-area-inset-bottom));
+      background: #FDFAF2;
+      border: 1.5px solid var(--ink);
+      box-shadow: 3px 3px 0 rgba(28, 18, 8, 0.7);
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 5;
+    }
+
+    .hud-tray-section {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+    }
+
+    .hud-tray-label {
+      font-size: 7px;
+      font-weight: bold;
+      color: var(--muted);
+      letter-spacing: 2px;
+    }
+
+    #hand-tally {
+      font-size: 7px;
+      font-weight: bold;
+      color: var(--ink);
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    #stone-selector {
+      display: flex;
+      gap: 8px;
+    }
+
+    .stone-btn {
+      flex: 1;
+      height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Space Mono', 'Courier New', monospace;
+      font-size: 26px;
+      font-weight: bold;
+      cursor: pointer;
+      background: var(--paper);
+      color: var(--ink);
+      border: 2.5px solid var(--ink);
+      box-shadow: 3px 3px 0 rgba(28, 18, 8, 0.5);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .stone-btn.active {
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .stone-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+
+    .hud-tray-divider {
+      width: 1px;
+      height: 46px;
+      background: var(--ink);
+      opacity: 0.25;
+      flex-shrink: 0;
+    }
+
+    #powerup-slots {
+      display: flex;
+      gap: 5px;
+    }
+
+    .powerup-slot {
+      flex: 1;
+      height: 30px;
+      border: 1.5px solid var(--ink);
+      box-shadow: 2px 2px 0 rgba(28, 18, 8, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      background: var(--waiting-bg);
     }
   </style>
 </head>
@@ -192,37 +262,40 @@
 
   <div id="game-wrap">
 
-    <!-- Top HUD: brand + round + player strip -->
-    <div id="hud-top">
-      <div class="hud-brand">
-        <span class="stone-icon plus">+</span>
-        <span class="stone-icon minus">−</span>
-        <span class="hud-brand-name">POLARITY</span>
-      </div>
-      <span class="hud-sep">·</span>
-      <span id="hud-round">ROUND 1</span>
-      <div id="player-strip"></div>
+    <canvas id="board-canvas"></canvas>
+
+    <!-- Top bar -->
+    <div id="hud-top-bar">
+      <span class="hud-chip">[POLARITY]</span>
+      <span class="hud-chip" id="hud-round">RND 1</span>
     </div>
 
-    <!-- Board canvas -->
-    <div id="canvas-wrap">
-      <canvas id="board-canvas"></canvas>
+    <!-- Minimap -->
+    <div id="hud-minimap">
+      <div id="minimap-label">[MAP]</div>
+      <canvas id="minimap-canvas" width="52" height="68"></canvas>
     </div>
 
-    <!-- Bottom HUD: stone selector + timer/snap -->
-    <div id="hud-bottom">
-      <div id="stone-selector">
-        <button class="stone-btn plus active" id="btn-plus">
-          <span class="stone-btn-sym">+</span>
-          <span class="stone-btn-n" id="count-plus">50</span>
-        </button>
-        <button class="stone-btn minus" id="btn-minus">
-          <span class="stone-btn-sym">−</span>
-          <span class="stone-btn-n" id="count-minus">5</span>
-        </button>
+    <!-- Player stack + shop -->
+    <div id="hud-player-stack">
+      <div id="player-stack"></div>
+      <button id="btn-shop" class="hud-shop-chip">[ SHOP ]</button>
+    </div>
+
+    <!-- Bottom tray: hand + power-ups -->
+    <div id="hud-bottom-tray">
+      <div class="hud-tray-section">
+        <span class="hud-tray-label">[HAND]</span>
+        <span id="hand-tally">[+] 50  [-] 5</span>
+        <div id="stone-selector">
+          <button class="stone-btn active" id="btn-plus">+</button>
+          <button class="stone-btn" id="btn-minus">&minus;</button>
+        </div>
       </div>
-      <div id="game-meta">
-        <div id="snap-count">SNAP 0</div>
+      <div class="hud-tray-divider"></div>
+      <div class="hud-tray-section">
+        <span class="hud-tray-label">[POWER-UPS]</span>
+        <div id="powerup-slots"></div>
       </div>
     </div>
 

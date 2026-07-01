@@ -7,16 +7,18 @@ const myId     = getOrCreatePlayerId();
 
 if (!roomCode) window.location.href = '../index.html';
 
-let unsubRoom = null;
-let room      = null;
-let rendered  = false;
+const PODIUM_SIZE = 3;
+const DOT_MAX      = 5;
+
+let room     = null;
+let rendered = false;
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-async function init() {
+function init() {
   document.getElementById('back-lobby-btn').addEventListener('click', onBackToLobby);
   document.getElementById('play-again-btn').addEventListener('click', onPlayAgain);
 
-  unsubRoom = subscribeToRoom(roomCode, onRoomUpdate);
+  subscribeToRoom(roomCode, onRoomUpdate);
 }
 
 function onRoomUpdate(r) {
@@ -45,58 +47,72 @@ async function renderResults(r) {
 
   document.getElementById('round-label').textContent = `AFTER ${maxRound} ROUND${maxRound !== 1 ? 'S' : ''}`;
 
-  // Fetch snap scores across all rounds
-  let scores = {};
-  try { scores = await getSnapScores(roomCode, maxRound); } catch (_) {}
+  // Snap count is a PENALTY tally, not a score — used only for the stats section.
+  let penalties = {};
+  try { penalties = await getSnapScores(roomCode, maxRound); } catch (_) {}
 
-  // Sort players: winner first, then by snaps desc, then by plusStones desc
-  const sorted = Object.entries(players)
-    .filter(([, p]) => !p.isBot)   // show humans first
-    .concat(Object.entries(players).filter(([, p]) => p.isBot))
-    .sort(([idA, a], [idB, b]) => {
-      if (idA === r.winner) return -1;
-      if (idB === r.winner) return  1;
-      const sa = scores[idA] ?? 0;
-      const sb = scores[idB] ?? 0;
-      if (sb !== sa) return sb - sa;
-      return (b.plusStones ?? 0) - (a.plusStones ?? 0);
-    });
+  // Rank: the declared winner first, then everyone else by fewest stones remaining.
+  const sorted = Object.entries(players).sort(([idA, a], [idB, b]) => {
+    if (idA === r.winner) return -1;
+    if (idB === r.winner) return  1;
+    const totalA = (a.plusStones ?? 0) + (a.minusStones ?? 0);
+    const totalB = (b.plusStones ?? 0) + (b.minusStones ?? 0);
+    return totalA - totalB;
+  });
 
-  // Total snaps for stats
-  const totalSnaps = Object.values(scores).reduce((s, n) => s + n, 0);
-
-  const winnerEntry = sorted[0];
-  const winnerId    = winnerEntry?.[0];
-  const winnerData  = winnerEntry?.[1] ?? {};
-  const winnerSnaps = scores[winnerId] ?? 0;
+  const totalPenalties = Object.values(penalties).reduce((s, n) => s + n, 0);
 
   const content = document.getElementById('win-content');
   content.className = '';
   content.innerHTML = `
-    ${buildWinnerCard(winnerId, winnerData, winnerSnaps)}
-    <div class="leaderboard gap-6" style="margin-bottom:16px">
-      ${sorted.map(([id, p], i) => buildLbRow(i + 1, id, p, scores[id] ?? 0)).join('')}
+    <div class="podium gap-20">
+      ${sorted.slice(0, PODIUM_SIZE).map(([id, p], i) => buildPodiumCard(i + 1, id, p)).join('')}
     </div>
-    ${buildStats(r, totalSnaps, scores)}
+    <div class="leaderboard gap-6" style="margin-bottom:16px">
+      ${sorted.map(([id, p], i) => buildLbRow(i + 1, id, p, penalties[id] ?? 0)).join('')}
+    </div>
+    ${buildStats(r, totalPenalties, penalties)}
   `;
 }
 
-function buildWinnerCard(id, p, snaps) {
-  const src = avatarSrc(p.avatar, true);
+function buildDots(stonesRemaining) {
+  const filled = Math.min(stonesRemaining, DOT_MAX);
+  const dots = Array.from({ length: DOT_MAX }, (_, i) =>
+    `<span class="stone-dot${i < filled ? ' filled' : ''}"></span>`
+  ).join('');
+  const badge = stonesRemaining > DOT_MAX ? `<span class="dot-overflow">${DOT_MAX}+</span>` : '';
+  return `<div class="stone-dots">${dots}${badge}</div>`;
+}
+
+const PODIUM_ROOF_SVG = `<svg class="podium-roof" width="38" height="20" viewBox="0 0 38 20">
+  <polygon points="0,20 0,7 9,0 19,9 29,0 38,7 38,20" fill="#1C1208"></polygon>
+  <rect x="3" y="12" width="4" height="4" fill="#F5F0E5"></rect>
+  <rect x="17" y="13" width="4" height="4" fill="#F5F0E5"></rect>
+  <rect x="31" y="12" width="4" height="4" fill="#F5F0E5"></rect>
+</svg>`;
+
+function buildPodiumCard(rank, id, p) {
+  const src    = avatarSrc(p.avatar, true);
+  const stones = (p.plusStones ?? 0) + (p.minusStones ?? 0);
+  const label  = rank === 1 ? '1ST' : rank === 2 ? '2ND' : '3RD';
+  const footer = rank === 1
+    ? `<span class="podium-winner-badge">[ WINNER ]</span>`
+    : buildDots(stones);
   return `
-    <div class="winner-card gap-20" style="margin-bottom:16px">
-      <div class="winner-avatar" style="background:${p.color || '#CCCCCC'}">
+    <div class="podium-card podium-${rank}">
+      ${rank === 1 ? PODIUM_ROOF_SVG : ''}
+      <span class="podium-rank-badge">[ ${label} ]</span>
+      <div class="podium-avatar" style="background:${p.color || '#CCCCCC'}">
         <img src="${src}" alt="${p.name}">
       </div>
-      <div class="winner-name">${p.name || 'PLAYER'}</div>
-      <span class="winner-badge">WINNER</span>
-      <span class="winner-snaps">${snaps} SNAP${snaps !== 1 ? 'S' : ''}</span>
+      <div class="podium-name">${p.name || 'PLAYER'}</div>
+      ${footer}
     </div>`;
 }
 
-function buildLbRow(rank, id, p, snaps) {
-  const src   = avatarSrc(p.avatar, true);
-  const isMe  = id === myId;
+function buildLbRow(rank, id, p, penaltyCount) {
+  const src    = avatarSrc(p.avatar, true);
+  const isMe   = id === myId;
   const stones = (p.plusStones ?? 0) + (p.minusStones ?? 0);
   return `
     <div class="lb-row" style="${isMe ? 'border-color:var(--ink)' : ''}">
@@ -105,35 +121,34 @@ function buildLbRow(rank, id, p, snaps) {
         <img src="${src}" alt="${p.name}">
       </div>
       <span class="lb-name">${p.name || 'PLAYER'}${isMe ? ' (YOU)' : ''}</span>
-      <span class="lb-snaps">${snaps} SNAP${snaps !== 1 ? 'S' : ''}</span>
+      <span class="lb-snaps">${penaltyCount} PENALT${penaltyCount !== 1 ? 'IES' : 'Y'}</span>
       <span class="lb-stones">+${p.plusStones ?? 0} −${p.minusStones ?? 0}</span>
     </div>`;
 }
 
-function buildStats(r, totalSnaps, scores) {
-  const players = r.players || {};
-  const snapValues = Object.values(scores);
-  const maxChain = snapValues.length > 0 ? Math.max(...snapValues) : 0;
-  const mySnaps  = scores[myId] ?? 0;
+function buildStats(r, totalPenalties, penalties) {
+  const penaltyValues = Object.values(penalties);
+  const maxChain = penaltyValues.length > 0 ? Math.max(...penaltyValues) : 0;
+  const myPenalties = penalties[myId] ?? 0;
 
   return `
     <div class="stats-section gap-20" style="margin-bottom:4px">
       <p class="section-label" style="margin-bottom:8px">[ GAME STATS ]</p>
       <div class="stats-row">
-        <span class="stats-label">TOTAL SNAPS</span>
-        <span class="stats-value">${totalSnaps}</span>
+        <span class="stats-label">TOTAL SNAP PENALTIES</span>
+        <span class="stats-value">${totalPenalties}</span>
       </div>
       <div class="stats-row">
-        <span class="stats-label">YOUR SNAPS</span>
-        <span class="stats-value">${mySnaps}</span>
+        <span class="stats-label">YOUR SNAP PENALTIES</span>
+        <span class="stats-value">${myPenalties}</span>
       </div>
       <div class="stats-row">
         <span class="stats-label">ROUNDS PLAYED</span>
         <span class="stats-value">${r.round ?? 1}</span>
       </div>
       <div class="stats-row">
-        <span class="stats-label">HIGHEST CHAIN</span>
-        <span class="stats-value">${maxChain} SNAP${maxChain !== 1 ? 'S' : ''}</span>
+        <span class="stats-label">MOST PENALIZED</span>
+        <span class="stats-value">${maxChain}</span>
       </div>
     </div>`;
 }
